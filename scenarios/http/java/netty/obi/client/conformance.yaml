@@ -1,0 +1,17 @@
+# Copyright The OpenTelemetry Authors
+# SPDX-License-Identifier: Apache-2.0
+
+runner: http-conformance
+instrumented_library: netty
+instrumentation_library: go.opentelemetry.io/obi
+scenario_contract: ../../../../../../tools/http/test-client/contract.yaml
+
+weaver:
+  config: ../../../../../../tools/java/weaver.toml
+
+setup: otel-conformance-obi install -- otel-conformance-java prepare netty:obi
+
+server:
+  run: http-mock-server --port ${PORT}
+
+scenario_run: otel-conformance-obi run --target java otel-conformance-java run netty:obi NettyObiClientScenario

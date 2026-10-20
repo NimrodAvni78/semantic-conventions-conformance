@@ -18,7 +18,10 @@ When the instrumentation reaches the provider through another package, add it:
 the langchain instrumentation over `langchain-openai` is
 `opentelemetry-langchain-openai`. A third-party suite is named after the
 project — `openinference`, `openllmetry` — and a library that emits
-OpenTelemetry itself gets `native`. See
+OpenTelemetry itself gets `native`. OpenTelemetry eBPF Instrumentation, which
+instruments the process from outside it, is `obi`: its directory installs only
+the provider SDK and runs the shared programs under
+[`otel-conformance-obi`](../../tools/obi). See
 [Third-party and native instrumentations](README.md#third-party-and-native-instrumentations)
 for what else changes in those directories.
 

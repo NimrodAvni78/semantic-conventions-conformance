@@ -1,0 +1,15 @@
+# Copyright The OpenTelemetry Authors
+# SPDX-License-Identifier: Apache-2.0
+
+runner: http-conformance
+instrumented_library: net/http
+instrumentation_library: go.opentelemetry.io/obi
+
+setup: otel-conformance-obi install -- otel-conformance-ruby install
+
+server:
+  run: http-mock-server --port ${PORT}
+
+scenarios:
+  client:
+    run: otel-conformance-obi run --target ruby* otel-conformance-ruby run client.rb

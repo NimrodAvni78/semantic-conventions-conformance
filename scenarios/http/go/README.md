@@ -27,7 +27,8 @@ the answer each route writes. Their tests share
 [`internal/httpservertest`](internal/httpservertest), which asserts that a
 handler answers every exchange in the contract. The per-instrumentation `main`
 packages attach `otelhttp`, `echo-otel`, `otelgin`, `otelmux`, or `otelrestful`
-and start the SDK. The difference between instrumentations should be visible as
+and start the SDK; the `obi` packages start neither, and
+[`otel-conformance-obi`](../../../tools/obi) instruments the binary from outside. The difference between instrumentations should be visible as
 the code that differs, and nothing else.
 
 Go's `main` package is a directory, so a launch package and its

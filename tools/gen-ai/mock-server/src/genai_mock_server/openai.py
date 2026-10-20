@@ -17,6 +17,29 @@ from ._common import (
 
 bp = Blueprint("openai", __name__)
 
+_OPENAI_RESPONSE_HEADERS = {
+    "openai-version": "2020-10-01",
+    "openai-processing-ms": "100",
+    "x-request-id": "req_mock",
+}
+
+_OPENAI_COMPATIBLE_PATH_PREFIXES = ("/openai/",)
+_OPENAI_COMPATIBLE_USER_AGENT_PREFIXES = ("Together/",)
+
+
+def _answers_as_openai():
+    user_agent = request.headers.get("User-Agent", "")
+    return not request.path.startswith(
+        _OPENAI_COMPATIBLE_PATH_PREFIXES
+    ) and not user_agent.startswith(_OPENAI_COMPATIBLE_USER_AGENT_PREFIXES)
+
+
+@bp.after_request
+def _add_openai_headers(response):
+    if _answers_as_openai():
+        response.headers.update(_OPENAI_RESPONSE_HEADERS)
+    return response
+
 # Stored responses from `POST /v1/responses` with `store=True`, served back by
 # `GET /v1/responses/{id}` so scenarios can fetch a previously generated
 # response by its identifier.

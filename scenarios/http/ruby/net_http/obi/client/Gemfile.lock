@@ -1,0 +1,29 @@
+PATH
+  remote: ../../../../../../tools/http/test-client/ruby
+  specs:
+    opentelemetry-conformance-http (0.1.0)
+
+GEM
+  remote: https://rubygems.org/
+  specs:
+
+PLATFORMS
+  aarch64-linux-gnu
+  aarch64-linux-musl
+  arm64-darwin
+  ruby
+  x64-mingw-ucrt
+  x86-linux-gnu
+  x86-linux-musl
+  x86_64-darwin
+  x86_64-linux-gnu
+  x86_64-linux-musl
+
+DEPENDENCIES
+  opentelemetry-conformance-http!
+
+RUBY VERSION
+  ruby 4.0.7p0
+
+BUNDLED WITH
+  4.0.20

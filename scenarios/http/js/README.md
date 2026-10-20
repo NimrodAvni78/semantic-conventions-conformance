@@ -7,10 +7,13 @@ other language.
 ```text
 express/scenarios/                    what the server does, no OTel
 express/opentelemetry-express/        server.js, server/
+express/obi/                          server.js, server/
 http/scenarios/                       built-in client and server, no OTel
 http/opentelemetry-http/              client.js, server.js, client/, server/
+http/obi/                             client.js, server.js, client/, server/
 undici/scenarios/                     what the client does, no OTel
 undici/opentelemetry-undici/          client.js, client/
+undici/obi/                           client.js, client/
 ```
 
 This directory is the build root: one npm workspace, whose `package.json` and
@@ -22,7 +25,10 @@ than restating them.
 A `<library>/scenarios` package is the workload with no OpenTelemetry in it at
 all, so a second instrumentation of the same library measures the same
 behavior. Each `<instrumentation>` package is only the launch: it registers what
-it is measuring and hands the workload over.
+it is measuring and hands the workload over. An `obi` package registers
+nothing: it runs the workload bare, and
+[`otel-conformance-obi`](../../../tools/obi) instruments the process from
+outside.
 
 Client and server are separate packages even where one library has both, since
 coverage reduces everything a package emits and combining them could hide a

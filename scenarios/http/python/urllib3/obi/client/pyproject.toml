@@ -1,0 +1,14 @@
+[project]
+name = "urllib3-obi-conformance-client"
+version = "0.0.0"
+requires-python = ">=3.12"
+dependencies = [
+    "urllib3==2.8.0",
+    "otel-http-test-client",
+]
+
+[tool.uv.sources]
+otel-http-test-client = { path = "../../../../../../tools/http/test-client/python", editable = true }
+
+[tool.uv]
+package = false

@@ -7,8 +7,10 @@ PHP measures a Slim 4 server through
 ```text
 slim/scenarios/                       Slim routes and responses, no OTel
 slim/opentelemetry-slim/              locked instrumentation package
+slim/obi/                             locked workload alone, measured through OBI
 guzzle/scenarios/                     Guzzle request workload, no OTel
 guzzle/opentelemetry-guzzle/          locked instrumentation package
+guzzle/obi/                           locked workload alone, measured through OBI
 ```
 
 Each instrumentation side is its own Composer package with its own committed

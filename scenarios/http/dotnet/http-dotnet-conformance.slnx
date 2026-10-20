@@ -9,10 +9,12 @@
   <Folder Name="/aspnetcore/">
     <Project Path="aspnetcore/scenarios/AspNetCoreScenarios.csproj" />
     <Project Path="aspnetcore/opentelemetry-aspnetcore/OpenTelemetryAspNetCoreServer.csproj" />
+    <Project Path="aspnetcore/obi/ObiAspNetCoreServer.csproj" />
   </Folder>
   <Folder Name="/httpclient/">
     <Project Path="httpclient/scenarios/HttpClientScenarios.csproj" />
     <Project Path="httpclient/opentelemetry-http/OpenTelemetryHttpClient.csproj" />
+    <Project Path="httpclient/obi/ObiHttpClient.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="../../../tools/dotnet/OpenTelemetry.Conformance.Scenario/OpenTelemetry.Conformance.Scenario.csproj" />
