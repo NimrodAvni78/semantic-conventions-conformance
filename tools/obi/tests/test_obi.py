@@ -50,6 +50,8 @@ FAKE_OBI = textwrap.dedent(
     port = obi["daemon"]["internal_metrics"]["prometheus"]["port"]
     selector = obi["capture"]["rules"][0]["match"]["process"]
     mode = os.environ.get("FAKE_OBI_MODE", "ready")
+    print("fake obi on stdout", flush=True)
+    print("fake obi on stderr", file=sys.stderr, flush=True)
     if mode == "die-early":
         sys.exit(3)
     attached = []
@@ -461,11 +463,19 @@ class TestRunningUnderOBI:
         }
 
     def test_the_scenario_status_is_returned(
-        self, environ: dict[str, str], tmp_path: Path
+        self, environ: dict[str, str]
     ) -> None:
         assert run(gated(3), args=SELECT_GATED, environ=environ) == 3
-        pid = (tmp_path / "attached").read_text()
-        assert (tmp_path / "output" / "obi" / f"{pid}.log").is_file()
+
+    def test_obi_logs_only_to_standard_error(
+        self, environ: dict[str, str], capfd: pytest.CaptureFixture[str]
+    ) -> None:
+        run(gated(), args=SELECT_GATED, environ=environ)
+
+        out, err = capfd.readouterr()
+        assert "fake obi on stdout" in err
+        assert "fake obi on stderr" in err
+        assert "fake obi" not in out
 
     def test_the_scenario_is_released_only_once_obi_attached_it(
         self, environ: dict[str, str], monkeypatch: pytest.MonkeyPatch

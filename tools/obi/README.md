@@ -88,5 +88,6 @@ A replacement template must keep the internal metrics endpoint on
 | `OTEL_CONFORMANCE_OBI_READY_TIMEOUT` | seconds to wait for the scenario to reach the gate, and again for OBI to attach to it (60) |
 | `OTEL_CONFORMANCE_OBI_SETTLE` | seconds OBI keeps running after `COMMAND` exits (3) |
 
-OBI's own log for a run lands in `output/obi/<pid>.log` in the scenario
-directory.
+OBI logs to the launcher's standard error, so the runner shows it next to the
+scenario's own output when a scenario fails. Standard output stays the
+scenario's.

@@ -39,12 +39,11 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-import threading
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import IO, Mapping, Sequence
+from typing import Mapping, Sequence
 
 INSTALL = "install"
 
@@ -78,8 +77,6 @@ METRIC_EXPORT_INTERVAL_MILLIS = 1000
 DEFAULT_SETTLE = 3.0
 
 STOP_TIMEOUT = 30.0
-
-LOG_DIR = Path("output") / "obi"
 
 INSTRUMENTED_PROCESSES = re.compile(
     r"^obi_instrumented_processes\{[^}]*"
@@ -275,18 +272,6 @@ def obi_command(executable: Path, config: Path) -> list[str]:
     return command
 
 
-class _Follower(threading.Thread):
-    def __init__(self, stream: IO[bytes], log: IO[bytes]) -> None:
-        super().__init__(daemon=True)
-        self._stream = stream
-        self._log = log
-
-    def run(self) -> None:
-        for raw in iter(self._stream.readline, b""):
-            self._log.write(raw)
-            self._log.flush()
-
-
 def exit_status(code: int) -> int:
     return 128 - code if code < 0 else code
 
@@ -382,15 +367,6 @@ def _stop(obi: subprocess.Popen[bytes]) -> None:
         obi.wait()
 
 
-def _tail(path: Path, lines: int = 40) -> str:
-    try:
-        return "".join(
-            path.read_text(errors="replace").splitlines(keepends=True)[-lines:]
-        )
-    except OSError:
-        return ""
-
-
 def run(
     command: Sequence[str],
     exe: str | None = None,
@@ -422,50 +398,41 @@ def run(
     for forwarded in (signal.SIGINT, signal.SIGTERM):
         signal.signal(forwarded, forward)
     obi: subprocess.Popen[bytes] | None = None
-    log_path: Path | None = None
     with tempfile.TemporaryDirectory() as scratch:
         try:
             scenario = Scenario(command, Path(scratch) / "gate")
             scenario.wait_at_gate(ready_timeout)
             metrics_port = free_port()
-            LOG_DIR.mkdir(parents=True, exist_ok=True)
-            log_path = (LOG_DIR / f"{scenario.process.pid}.log").resolve()
-            with log_path.open("wb") as log:
-                config = Path(scratch) / "obi.yaml"
-                config.write_text(
-                    render_config(template, selector, metrics_port, environ),
-                    encoding="utf-8",
+            config = Path(scratch) / "obi.yaml"
+            config.write_text(
+                render_config(template, selector, metrics_port, environ),
+                encoding="utf-8",
+            )
+            sys.stderr.flush()
+            obi = subprocess.Popen(  # noqa: S603
+                obi_command(executable, config),
+                stdin=subprocess.DEVNULL,
+                stdout=sys.stderr,
+                stderr=sys.stderr,
+            )
+            _wait_ready(obi, scenario, metrics_port, ready_timeout)
+            scenario.release()
+            status = exit_status(scenario.process.wait())
+            deadline = time.monotonic() + settle
+            while time.monotonic() < deadline and obi.poll() is None:
+                time.sleep(POLL_INTERVAL)
+            if obi.poll() is not None:
+                raise LauncherError(
+                    f"OBI exited with status {obi.returncode} while the "
+                    "scenario ran"
                 )
-                obi = subprocess.Popen(  # noqa: S603
-                    obi_command(executable, config),
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                )
-                assert obi.stdout is not None
-                follower = _Follower(obi.stdout, log)
-                follower.start()
-                _wait_ready(obi, scenario, metrics_port, ready_timeout)
-                scenario.release()
-                status = exit_status(scenario.process.wait())
-                deadline = time.monotonic() + settle
-                while time.monotonic() < deadline and obi.poll() is None:
-                    time.sleep(POLL_INTERVAL)
-                if obi.poll() is not None:
-                    raise LauncherError(
-                        f"OBI exited with status {obi.returncode} while the "
-                        "scenario ran"
-                    )
-                _stop(obi)
-                follower.join(STOP_TIMEOUT)
+            _stop(obi)
             return status
         except BaseException:
             if scenario is not None:
                 scenario.kill()
             if obi is not None:
                 _stop(obi)
-            if log_path is not None:
-                print(_tail(log_path), file=sys.stderr)
             raise
 
 
