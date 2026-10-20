@@ -1,0 +1,10 @@
+{
+  "name": "@otel-conformance/http-obi",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The http workload with no OpenTelemetry in the process, measured through OBI.",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@otel-conformance/node-http-scenarios": "*"
+  }
+}

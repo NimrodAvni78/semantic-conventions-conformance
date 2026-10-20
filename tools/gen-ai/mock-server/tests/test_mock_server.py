@@ -707,6 +707,53 @@ def test_bedrock_invoke_reports_tokens_in_headers(client):
     assert response.json["results"][0]["completionReason"] == "FINISH"
 
 
+CHAT_BODY = {"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "hi"}]}
+
+
+def test_openai_answers_with_openai_response_headers(client):
+    response = client.post("/v1/chat/completions", json=CHAT_BODY)
+    assert response.headers["openai-version"] == "2020-10-01"
+    assert response.headers["openai-processing-ms"] == "100"
+    assert response.headers["x-request-id"] == "req_mock"
+
+
+def test_openai_streams_with_openai_response_headers(client):
+    response = client.post("/v1/chat/completions", json={**CHAT_BODY, "stream": True})
+    assert response.headers["openai-version"] == "2020-10-01"
+
+
+@pytest.mark.parametrize(
+    ("path", "headers"),
+    [
+        ("/openai/v1/chat/completions", {}),
+        ("/openai/deployments/mock/chat/completions", {}),
+        ("/v1/chat/completions", {"User-Agent": "Together/Python 2.41.0"}),
+    ],
+    ids=["groq", "azure", "together"],
+)
+def test_openai_compatible_providers_answer_without_openai_headers(client, path, headers):
+    response = client.post(path, json=CHAT_BODY, headers=headers)
+    assert response.status_code == 200
+    assert "openai-version" not in response.headers
+
+
+def test_anthropic_answers_with_anthropic_response_headers(client):
+    response = client.post(
+        "/v1/messages",
+        json={"model": "claude-sonnet-4-20250514", "max_tokens": 16, "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert response.headers["anthropic-organization-id"]
+    assert response.headers["request-id"] == "req_mock"
+
+
+def test_google_reports_the_service_tier_on_generate_content_only(client):
+    body = {"contents": [{"role": "user", "parts": [{"text": "hi"}]}]}
+    generated = client.post("/v1beta/models/gemini-2.0-flash:generateContent", json=body)
+    streamed = client.post("/v1beta/models/gemini-2.0-flash:streamGenerateContent", json=body)
+    assert generated.headers["x-gemini-service-tier"] == "standard"
+    assert "x-gemini-service-tier" not in streamed.headers
+
+
 def test_bedrock_invoke_answers_in_the_model_family_shape(client):
     """InvokeModel passes the model's own body through, so Claude is not Titan-shaped."""
     titan = client.post(

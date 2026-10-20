@@ -1,0 +1,16 @@
+# Copyright The OpenTelemetry Authors
+# SPDX-License-Identifier: Apache-2.0
+
+runner: http-conformance
+instrumented_library: guzzle
+instrumentation_library: go.opentelemetry.io/obi
+scenario_contract: ../../../../../../tools/http/test-client/contract.yaml
+
+setup: otel-conformance-obi install -- otel-conformance-php install
+
+server:
+  run: http-mock-server --port ${PORT}
+
+# Guzzle reports 4xx and 5xx as responses because the workload disables
+# http_errors; both statuses are measured like every other response.
+scenario_run: otel-conformance-obi run php ../client.php

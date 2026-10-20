@@ -1,0 +1,557 @@
+{
+  "spans": {},
+  "events": {},
+  "metrics": {},
+  "entities": {},
+  "findings": [
+    {
+      "id": "instrumentation_scope_name_missing",
+      "message": "Instrumentation scope '<missing>' does not have name.",
+      "signal_type": "instrumentation_scope",
+      "signal_name": "<missing>",
+      "context": {
+        "actual": "",
+        "expected": {
+          "present": true
+        }
+      }
+    },
+    {
+      "id": "instrumentation_scope_schema_url_missing",
+      "message": "Instrumentation scope '<missing>' does not have schema_url.",
+      "signal_type": "instrumentation_scope",
+      "signal_name": "<missing>",
+      "context": {
+        "actual": null,
+        "expected": {
+          "present": true
+        }
+      }
+    },
+    {
+      "id": "instrumentation_scope_schema_url_missing",
+      "message": "Instrumentation scope 'go.opentelemetry.io/obi' does not have schema_url.",
+      "signal_type": "instrumentation_scope",
+      "signal_name": "go.opentelemetry.io/obi",
+      "context": {
+        "actual": null,
+        "expected": {
+          "present": true
+        }
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'http.request.method' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "http.client.request.body.size",
+      "context": {
+        "attribute_key": "http.request.method"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'http.response.status_code' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "http.client.request.body.size",
+      "context": {
+        "attribute_key": "http.response.status_code"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'http.route' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "http.client.request.body.size",
+      "context": {
+        "attribute_key": "http.route"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'service.name' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "http.client.request.body.size",
+      "context": {
+        "attribute_key": "service.name"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'service.namespace' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "http.client.request.body.size",
+      "context": {
+        "attribute_key": "service.namespace"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'url.path' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "http.client.request.body.size",
+      "context": {
+        "attribute_key": "url.path"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'url.scheme' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "http.client.request.body.size",
+      "context": {
+        "attribute_key": "url.scheme"
+      }
+    },
+    {
+      "id": "missing_metric",
+      "message": "Metric does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "http.client.request.body.size"
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'http.request.method' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "http.client.request.duration",
+      "context": {
+        "attribute_key": "http.request.method"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'http.response.status_code' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "http.client.request.duration",
+      "context": {
+        "attribute_key": "http.response.status_code"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'http.route' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "http.client.request.duration",
+      "context": {
+        "attribute_key": "http.route"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'service.name' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "http.client.request.duration",
+      "context": {
+        "attribute_key": "service.name"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'service.namespace' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "http.client.request.duration",
+      "context": {
+        "attribute_key": "service.namespace"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'url.path' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "http.client.request.duration",
+      "context": {
+        "attribute_key": "url.path"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'url.scheme' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "http.client.request.duration",
+      "context": {
+        "attribute_key": "url.scheme"
+      }
+    },
+    {
+      "id": "missing_metric",
+      "message": "Metric does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "http.client.request.duration"
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'http.request.method' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "http.client.response.body.size",
+      "context": {
+        "attribute_key": "http.request.method"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'http.response.status_code' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "http.client.response.body.size",
+      "context": {
+        "attribute_key": "http.response.status_code"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'http.route' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "http.client.response.body.size",
+      "context": {
+        "attribute_key": "http.route"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'service.name' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "http.client.response.body.size",
+      "context": {
+        "attribute_key": "service.name"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'service.namespace' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "http.client.response.body.size",
+      "context": {
+        "attribute_key": "service.namespace"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'url.path' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "http.client.response.body.size",
+      "context": {
+        "attribute_key": "url.path"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'url.scheme' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "http.client.response.body.size",
+      "context": {
+        "attribute_key": "url.scheme"
+      }
+    },
+    {
+      "id": "missing_metric",
+      "message": "Metric does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "http.client.response.body.size"
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'host.id' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "target.info",
+      "context": {
+        "attribute_key": "host.id"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'host.name' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "target.info",
+      "context": {
+        "attribute_key": "host.name"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'instance' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "target.info",
+      "context": {
+        "attribute_key": "instance"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'job' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "target.info",
+      "context": {
+        "attribute_key": "job"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'os.type' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "target.info",
+      "context": {
+        "attribute_key": "os.type"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'service.instance.id' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "target.info",
+      "context": {
+        "attribute_key": "service.instance.id"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'service.name' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "target.info",
+      "context": {
+        "attribute_key": "service.name"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'telemetry.distro.name' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "target.info",
+      "context": {
+        "attribute_key": "telemetry.distro.name"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'telemetry.distro.version' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "target.info",
+      "context": {
+        "attribute_key": "telemetry.distro.version"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'telemetry.sdk.language' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "target.info",
+      "context": {
+        "attribute_key": "telemetry.sdk.language"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'telemetry.sdk.name' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "target.info",
+      "context": {
+        "attribute_key": "telemetry.sdk.name"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'telemetry.sdk.version' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "target.info",
+      "context": {
+        "attribute_key": "telemetry.sdk.version"
+      }
+    },
+    {
+      "id": "missing_metric",
+      "message": "Metric does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "target.info"
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'host.id' does not exist in the registry.",
+      "signal_type": "resource",
+      "context": {
+        "attribute_key": "host.id"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'host.name' does not exist in the registry.",
+      "signal_type": "resource",
+      "context": {
+        "attribute_key": "host.name"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'os.type' does not exist in the registry.",
+      "signal_type": "resource",
+      "context": {
+        "attribute_key": "os.type"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'otel.scope.name' does not exist in the registry.",
+      "signal_type": "resource",
+      "context": {
+        "attribute_key": "otel.scope.name"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'telemetry.distro.name' does not exist in the registry.",
+      "signal_type": "resource",
+      "context": {
+        "attribute_key": "telemetry.distro.name"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'telemetry.distro.version' does not exist in the registry.",
+      "signal_type": "resource",
+      "context": {
+        "attribute_key": "telemetry.distro.version"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'http.request.body.size' does not exist in the registry.",
+      "signal_type": "span",
+      "signal_name": "POST /mistral/v1/chat/completions",
+      "context": {
+        "attribute_key": "http.request.body.size"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'http.response.body.size' does not exist in the registry.",
+      "signal_type": "span",
+      "signal_name": "POST /mistral/v1/chat/completions",
+      "context": {
+        "attribute_key": "http.response.body.size"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'network.peer.address' does not exist in the registry.",
+      "signal_type": "span",
+      "signal_name": "POST /mistral/v1/chat/completions",
+      "context": {
+        "attribute_key": "network.peer.address"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'network.peer.port' does not exist in the registry.",
+      "signal_type": "span",
+      "signal_name": "POST /mistral/v1/chat/completions",
+      "context": {
+        "attribute_key": "network.peer.port"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'service.peer.name' does not exist in the registry.",
+      "signal_type": "span",
+      "signal_name": "POST /mistral/v1/chat/completions",
+      "context": {
+        "attribute_key": "service.peer.name"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'url.full' does not exist in the registry.",
+      "signal_type": "span",
+      "signal_name": "POST /mistral/v1/chat/completions",
+      "context": {
+        "attribute_key": "url.full"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'url.scheme' does not exist in the registry.",
+      "signal_type": "span",
+      "signal_name": "POST /mistral/v1/chat/completions",
+      "context": {
+        "attribute_key": "url.scheme"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'url.template' does not exist in the registry.",
+      "signal_type": "span",
+      "signal_name": "POST /mistral/v1/chat/completions",
+      "context": {
+        "attribute_key": "url.template"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'http.request.body.size' does not exist in the registry.",
+      "signal_type": "span",
+      "signal_name": "POST /mistral/v1/embeddings",
+      "context": {
+        "attribute_key": "http.request.body.size"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'http.response.body.size' does not exist in the registry.",
+      "signal_type": "span",
+      "signal_name": "POST /mistral/v1/embeddings",
+      "context": {
+        "attribute_key": "http.response.body.size"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'network.peer.address' does not exist in the registry.",
+      "signal_type": "span",
+      "signal_name": "POST /mistral/v1/embeddings",
+      "context": {
+        "attribute_key": "network.peer.address"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'network.peer.port' does not exist in the registry.",
+      "signal_type": "span",
+      "signal_name": "POST /mistral/v1/embeddings",
+      "context": {
+        "attribute_key": "network.peer.port"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'service.peer.name' does not exist in the registry.",
+      "signal_type": "span",
+      "signal_name": "POST /mistral/v1/embeddings",
+      "context": {
+        "attribute_key": "service.peer.name"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'url.full' does not exist in the registry.",
+      "signal_type": "span",
+      "signal_name": "POST /mistral/v1/embeddings",
+      "context": {
+        "attribute_key": "url.full"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'url.scheme' does not exist in the registry.",
+      "signal_type": "span",
+      "signal_name": "POST /mistral/v1/embeddings",
+      "context": {
+        "attribute_key": "url.scheme"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'url.template' does not exist in the registry.",
+      "signal_type": "span",
+      "signal_name": "POST /mistral/v1/embeddings",
+      "context": {
+        "attribute_key": "url.template"
+      }
+    }
+  ]
+}

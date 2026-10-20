@@ -12,13 +12,15 @@ and its `conformance.yaml` says which.
 ```text
 aspnetcore/scenarios/                    what the server does, no OTel
 aspnetcore/opentelemetry-aspnetcore/     the launcher, and server/
+aspnetcore/obi/                          the workload alone, measured through OBI
 httpclient/scenarios/                    what the client does, no OTel
 httpclient/opentelemetry-http/           the launcher, and client/
+httpclient/obi/                          the workload alone, measured through OBI
 ```
 
 [`http-dotnet-conformance.slnx`](http-dotnet-conformance.slnx) is the build
 root. It lists the shared projects under [`tools/`](../../../tools) alongside
-these four rather than restating them, so `dotnet build` here compiles every
+these six rather than restating them, so `dotnet build` here compiles every
 project a .NET HTTP scenario depends on, including both tooling test projects.
 
 ## Building and testing

@@ -1,0 +1,21 @@
+# Copyright The OpenTelemetry Authors
+# SPDX-License-Identifier: Apache-2.0
+
+runner: genai-conformance
+instrumented_library: botocore
+instrumentation_library: go.opentelemetry.io/obi
+setup: otel-conformance-obi install -- uv sync --frozen --project .
+server:
+  run: genai-mock-server --port ${PORT}
+env:
+  AWS_ENDPOINT_URL_BEDROCK_RUNTIME: ${MOCK_SERVER_URL}
+  AWS_ACCESS_KEY_ID: test_access_key_id
+  AWS_SECRET_ACCESS_KEY: test_secret_access_key
+  AWS_DEFAULT_REGION: us-east-1
+scenarios:
+  inference:
+    run: otel-conformance-obi run --target python3* uv run --frozen --project . python ../scenarios/inference.py
+  streaming:
+    run: otel-conformance-obi run --target python3* uv run --frozen --project . python ../scenarios/streaming.py
+  tool_calling:
+    run: otel-conformance-obi run --target python3* uv run --frozen --project . python ../scenarios/tool_calling.py

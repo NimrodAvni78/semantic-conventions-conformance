@@ -9,6 +9,15 @@ from ._common import mock_json_schema_value, mock_tool_arguments
 
 bp = Blueprint("google_genai", __name__)
 
+_GENERATE_CONTENT_RESPONSE_HEADERS = {"x-gemini-service-tier": "standard"}
+
+
+@bp.after_request
+def _add_generate_content_headers(response):
+    if request.path.startswith("/v1beta/models/") and request.path.endswith(":generateContent"):
+        response.headers.update(_GENERATE_CONTENT_RESPONSE_HEADERS)
+    return response
+
 
 RESPONSE = {
     "candidates": [

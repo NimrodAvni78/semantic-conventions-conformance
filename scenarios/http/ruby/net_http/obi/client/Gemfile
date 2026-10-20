@@ -1,0 +1,9 @@
+# Copyright The OpenTelemetry Authors
+# SPDX-License-Identifier: Apache-2.0
+
+source "https://rubygems.org"
+
+ruby ">= 4.0", "< 4.1"
+
+gem "opentelemetry-conformance-http",
+    path: "../../../../../../tools/http/test-client/ruby"

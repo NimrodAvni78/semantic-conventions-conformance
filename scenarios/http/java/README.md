@@ -9,7 +9,8 @@ pinned in [`gradle/libs.versions.toml`](gradle/libs.versions.toml).
 
 `opentelemetry-javaagent` projects attach the full Java agent.
 `opentelemetry-library` projects initialize the SDK and install one explicit
-library instrumentation.
+library instrumentation. `obi` projects run the workload with neither, and
+[`otel-conformance-obi`](../../../tools/obi) instruments the JVM from outside.
 
 ## Running one
 

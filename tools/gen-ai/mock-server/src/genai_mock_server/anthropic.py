@@ -9,6 +9,17 @@ from ._common import mock_tool_arguments
 
 bp = Blueprint("anthropic", __name__)
 
+_ANTHROPIC_RESPONSE_HEADERS = {
+    "anthropic-organization-id": "00000000-0000-4000-8000-000000000000",
+    "request-id": "req_mock",
+}
+
+
+@bp.after_request
+def _add_anthropic_headers(response):
+    response.headers.update(_ANTHROPIC_RESPONSE_HEADERS)
+    return response
+
 
 MESSAGE_RESPONSE = {
     "id": "msg-mock-001",

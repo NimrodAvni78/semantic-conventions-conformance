@@ -1,0 +1,12 @@
+# Copyright The OpenTelemetry Authors
+# SPDX-License-Identifier: Apache-2.0
+
+runner: http-conformance
+instrumented_library: slim
+instrumentation_library: go.opentelemetry.io/obi
+
+setup: otel-conformance-obi install -- otel-conformance-php install
+
+scenarios:
+  server:
+    run: otel-http-drive --serve otel-conformance-obi run --target php* otel-conformance-php serve ../router.php

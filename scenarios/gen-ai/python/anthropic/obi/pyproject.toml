@@ -1,0 +1,10 @@
+[project]
+name = "anthropic-obi-conformance"
+version = "0.0.0"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic==1.13.0",
+]
+
+[tool.uv]
+package = false

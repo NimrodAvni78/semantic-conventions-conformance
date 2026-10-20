@@ -1,0 +1,12 @@
+# Copyright The OpenTelemetry Authors
+# SPDX-License-Identifier: Apache-2.0
+
+runner: http-conformance
+instrumented_library: asgi
+instrumentation_library: go.opentelemetry.io/obi
+
+setup: otel-conformance-obi install -- uv sync --frozen --project .
+
+scenarios:
+  server:
+    run: otel-http-drive --serve otel-conformance-obi run --target python3* uv run --frozen --project . python scenario.py

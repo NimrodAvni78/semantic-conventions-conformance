@@ -1,0 +1,377 @@
+{
+  "spans": {
+    "gen_ai.embeddings.client": [
+      "gen_ai.embeddings.dimension.count",
+      "gen_ai.operation.name",
+      "gen_ai.provider.name",
+      "gen_ai.request.encoding_formats",
+      "gen_ai.request.model",
+      "gen_ai.response.model",
+      "gen_ai.usage.input_tokens",
+      "server.address",
+      "server.port"
+    ],
+    "gen_ai.inference.client": [
+      "gen_ai.input.messages",
+      "gen_ai.operation.name",
+      "gen_ai.output.messages",
+      "gen_ai.provider.name",
+      "gen_ai.request.frequency_penalty",
+      "gen_ai.request.max_tokens",
+      "gen_ai.request.model",
+      "gen_ai.request.presence_penalty",
+      "gen_ai.request.seed",
+      "gen_ai.request.stop_sequences",
+      "gen_ai.request.stream",
+      "gen_ai.request.temperature",
+      "gen_ai.response.finish_reasons",
+      "gen_ai.response.id",
+      "gen_ai.response.model",
+      "gen_ai.tool.definitions",
+      "gen_ai.usage.cache_read.input_tokens",
+      "gen_ai.usage.input_tokens",
+      "gen_ai.usage.output_tokens",
+      "gen_ai.usage.reasoning.output_tokens",
+      "server.address",
+      "server.port"
+    ]
+  },
+  "events": {},
+  "metrics": {
+    "gen_ai.client.operation.duration": [
+      "gen_ai.operation.name",
+      "gen_ai.provider.name",
+      "gen_ai.request.model",
+      "gen_ai.response.model",
+      "server.address",
+      "server.port"
+    ],
+    "gen_ai.client.token.usage": [
+      "gen_ai.operation.name",
+      "gen_ai.provider.name",
+      "gen_ai.request.model",
+      "gen_ai.response.model",
+      "gen_ai.token.type",
+      "server.address",
+      "server.port"
+    ]
+  },
+  "entities": {},
+  "findings": [
+    {
+      "id": "instrumentation_scope_name_missing",
+      "message": "Instrumentation scope '<missing>' does not have name.",
+      "signal_type": "instrumentation_scope",
+      "signal_name": "<missing>",
+      "context": {
+        "actual": "",
+        "expected": {
+          "present": true
+        }
+      }
+    },
+    {
+      "id": "instrumentation_scope_schema_url_missing",
+      "message": "Instrumentation scope '<missing>' does not have schema_url.",
+      "signal_type": "instrumentation_scope",
+      "signal_name": "<missing>",
+      "context": {
+        "actual": null,
+        "expected": {
+          "present": true
+        }
+      }
+    },
+    {
+      "id": "instrumentation_scope_schema_url_missing",
+      "message": "Instrumentation scope 'go.opentelemetry.io/obi' does not have schema_url.",
+      "signal_type": "instrumentation_scope",
+      "signal_name": "go.opentelemetry.io/obi",
+      "context": {
+        "actual": null,
+        "expected": {
+          "present": true
+        }
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'service.name' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "gen_ai.client.operation.duration",
+      "context": {
+        "attribute_key": "service.name"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'service.namespace' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "gen_ai.client.operation.duration",
+      "context": {
+        "attribute_key": "service.namespace"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'service.name' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "gen_ai.client.token.usage",
+      "context": {
+        "attribute_key": "service.name"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'service.namespace' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "gen_ai.client.token.usage",
+      "context": {
+        "attribute_key": "service.namespace"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'host.id' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "target.info",
+      "context": {
+        "attribute_key": "host.id"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'host.name' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "target.info",
+      "context": {
+        "attribute_key": "host.name"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'instance' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "target.info",
+      "context": {
+        "attribute_key": "instance"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'job' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "target.info",
+      "context": {
+        "attribute_key": "job"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'os.type' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "target.info",
+      "context": {
+        "attribute_key": "os.type"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'service.instance.id' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "target.info",
+      "context": {
+        "attribute_key": "service.instance.id"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'service.name' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "target.info",
+      "context": {
+        "attribute_key": "service.name"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'telemetry.distro.name' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "target.info",
+      "context": {
+        "attribute_key": "telemetry.distro.name"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'telemetry.distro.version' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "target.info",
+      "context": {
+        "attribute_key": "telemetry.distro.version"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'telemetry.sdk.language' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "target.info",
+      "context": {
+        "attribute_key": "telemetry.sdk.language"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'telemetry.sdk.name' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "target.info",
+      "context": {
+        "attribute_key": "telemetry.sdk.name"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'telemetry.sdk.version' does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "target.info",
+      "context": {
+        "attribute_key": "telemetry.sdk.version"
+      }
+    },
+    {
+      "id": "missing_metric",
+      "message": "Metric does not exist in the registry.",
+      "signal_type": "metric",
+      "signal_name": "target.info"
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'host.id' does not exist in the registry.",
+      "signal_type": "resource",
+      "context": {
+        "attribute_key": "host.id"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'host.name' does not exist in the registry.",
+      "signal_type": "resource",
+      "context": {
+        "attribute_key": "host.name"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'os.type' does not exist in the registry.",
+      "signal_type": "resource",
+      "context": {
+        "attribute_key": "os.type"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'otel.scope.name' does not exist in the registry.",
+      "signal_type": "resource",
+      "context": {
+        "attribute_key": "otel.scope.name"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'telemetry.distro.name' does not exist in the registry.",
+      "signal_type": "resource",
+      "context": {
+        "attribute_key": "telemetry.distro.name"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'telemetry.distro.version' does not exist in the registry.",
+      "signal_type": "resource",
+      "context": {
+        "attribute_key": "telemetry.distro.version"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'network.peer.address' does not exist in the registry.",
+      "signal_type": "span",
+      "signal_name": "chat gpt-4o-audio-preview",
+      "context": {
+        "attribute_key": "network.peer.address"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'network.peer.port' does not exist in the registry.",
+      "signal_type": "span",
+      "signal_name": "chat gpt-4o-audio-preview",
+      "context": {
+        "attribute_key": "network.peer.port"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'service.peer.name' does not exist in the registry.",
+      "signal_type": "span",
+      "signal_name": "chat gpt-4o-audio-preview",
+      "context": {
+        "attribute_key": "service.peer.name"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'network.peer.address' does not exist in the registry.",
+      "signal_type": "span",
+      "signal_name": "chat gpt-4o-mini",
+      "context": {
+        "attribute_key": "network.peer.address"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'network.peer.port' does not exist in the registry.",
+      "signal_type": "span",
+      "signal_name": "chat gpt-4o-mini",
+      "context": {
+        "attribute_key": "network.peer.port"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'service.peer.name' does not exist in the registry.",
+      "signal_type": "span",
+      "signal_name": "chat gpt-4o-mini",
+      "context": {
+        "attribute_key": "service.peer.name"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'network.peer.address' does not exist in the registry.",
+      "signal_type": "span",
+      "signal_name": "embeddings text-embedding-3-small",
+      "context": {
+        "attribute_key": "network.peer.address"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'network.peer.port' does not exist in the registry.",
+      "signal_type": "span",
+      "signal_name": "embeddings text-embedding-3-small",
+      "context": {
+        "attribute_key": "network.peer.port"
+      }
+    },
+    {
+      "id": "missing_attribute",
+      "message": "Attribute 'service.peer.name' does not exist in the registry.",
+      "signal_type": "span",
+      "signal_name": "embeddings text-embedding-3-small",
+      "context": {
+        "attribute_key": "service.peer.name"
+      }
+    }
+  ]
+}
