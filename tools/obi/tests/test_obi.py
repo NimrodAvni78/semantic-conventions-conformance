@@ -3,8 +3,6 @@
 
 from __future__ import annotations
 
-import os
-import subprocess
 import sys
 import textwrap
 import urllib.error
@@ -27,29 +25,15 @@ from otel_conformance_obi import (
     binary,
     cache_dir,
     config_template,
+    exit_status,
     install,
     main,
     render_config,
     run,
     version,
 )
-from otel_conformance_obi._ptrace import (
-    AF_INET,
-    AF_INET6,
-    ARCHITECTURES,
-    SECCOMP_RET_ALLOW,
-    SECCOMP_RET_TRACE,
-    Tracer,
-    image_matcher,
-    is_go_executable,
-    socket_filter,
-)
 
 ENDPOINT = "http://127.0.0.1:4317"
-
-PYTHON = Path(os.path.realpath(sys.executable)).name
-
-SOCKET = "import socket; socket.socket().close()"
 
 ATTACHED = 'level=DEBUG msg="new executable for discovered process" component=discover.traceAttacher pid={pid} child=[]'
 
@@ -63,6 +47,9 @@ FAKE_OBI = textwrap.dedent(
     mode = os.environ.get("FAKE_OBI_MODE", "ready")
     if mode == "die-early":
         sys.exit(3)
+    if mode == "slow":
+        time.sleep(0.5)
+    open("attached", "w").write(pid)
     print({attached!r}.format(pid=pid), flush=True)
     print({done!r}, flush=True)
     if mode == "die-later":
@@ -74,25 +61,30 @@ FAKE_OBI = textwrap.dedent(
 ).format(attached=ATTACHED, done=DONE)
 
 
-def opens_socket(marker: str = "", status: int = 0) -> list[str]:
-    program = SOCKET + (f"; raise SystemExit({status})" if status else "")
-    return [sys.executable, "-c", program, *([marker] if marker else [])]
+GATED = textwrap.dedent(
+    """\
+    import os, pathlib, socket, sys
+    gate = socket.socket(socket.AF_UNIX)
+    gate.connect(os.environ["OTEL_CONFORMANCE_GATE"])
+    gate.sendall(f"{os.getpid()}\\n".encode())
+    released = gate.recv(1)
+    attached = pathlib.Path("attached")
+    instrumented = attached.exists() and attached.read_text() == str(os.getpid())
+    sys.exit(int(sys.argv[1]) if released and instrumented else 99)
+    """
+)
+
+
+def gated(status: int = 0) -> list[str]:
+    return [sys.executable, "-c", GATED, str(status)]
 
 
 def shell(command: list[str]) -> str:
     return " ".join(f"'{part}'" for part in command)
 
 
-def socket_count(pid: int) -> int:
-    return sum(
-        1
-        for fd in Path(f"/proc/{pid}/fd").iterdir()
-        if os.readlink(fd).startswith("socket:")
-    )
-
-
 linux_only = pytest.mark.skipif(
-    not sys.platform.startswith("linux"), reason="ptrace is Linux only"
+    not sys.platform.startswith("linux"), reason="OBI runs on Linux only"
 )
 
 
@@ -101,24 +93,6 @@ def rendered(pid: int = 4242, **environ: str) -> dict:
     return yaml.safe_load(
         render_config(config_template({}).read_text(), pid, environ)
     )
-
-
-def run_bpf(
-    program: list[tuple[int, int, int, int]], data: dict[int, int]
-) -> int:
-    accumulator = 0
-    pc = 0
-    while True:
-        code, jt, jf, k = program[pc]
-        if code == 0x20:
-            accumulator = data[k]
-            pc += 1
-        elif code == 0x15:
-            pc += 1 + (jt if accumulator == k else jf)
-        elif code == 0x06:
-            return k
-        else:
-            raise AssertionError(f"unexpected BPF opcode {code:#x}")
 
 
 class TestTheRelease:
@@ -299,154 +273,12 @@ class TestReadiness:
         assert not readiness.feed(DONE)
 
 
-@linux_only
-class TestFollowingTheProcessTree:
-    def test_the_command_itself_is_the_default_target(self) -> None:
-        tracer = Tracer(opens_socket(), image_matcher(None, None))
-        root = tracer.spawn()
-
-        assert tracer.find_target(10) == root
-        assert socket_count(root) == 0
-        tracer.release()
-        assert tracer.wait() == 0
-
-    def test_without_a_target_a_child_is_never_selected(self) -> None:
-        tracer = Tracer(
-            ["/bin/sh", "-c", shell(opens_socket()) + "; exit 0"],
-            image_matcher(None, None),
-        )
-        tracer.spawn()
-
-        with pytest.raises(
-            otel_conformance_obi.TraceError, match="opened a socket"
-        ):
-            tracer.find_target(10)
-
-    def test_a_target_started_by_a_wrapper_is_held_at_its_socket(
-        self,
+class TestTheExitStatus:
+    @pytest.mark.parametrize(("code", "status"), [(0, 0), (3, 3), (-15, 143)])
+    def test_a_signal_maps_to_its_shell_status(
+        self, code: int, status: int
     ) -> None:
-        tracer = Tracer(
-            ["/bin/sh", "-c", "/bin/true && exec " + shell(opens_socket())],
-            image_matcher(PYTHON, None),
-        )
-        root = tracer.spawn()
-
-        target = tracer.find_target(10)
-
-        assert target == root
-        assert Path(os.readlink(f"/proc/{target}/exe")).name == PYTHON
-        tracer.release()
-        assert tracer.wait() == 0
-
-    def test_a_forked_target_is_found(self) -> None:
-        tracer = Tracer(
-            ["/bin/sh", "-c", shell(opens_socket()) + "; exit 3"],
-            image_matcher(PYTHON, None),
-        )
-        root = tracer.spawn()
-
-        target = tracer.find_target(10)
-
-        assert target != root
-        tracer.release()
-        assert tracer.wait() == 3
-
-    def test_a_command_line_glob_narrows_the_target(self) -> None:
-        tracer = Tracer(
-            [
-                "/bin/sh",
-                "-c",
-                shell(opens_socket("first"))
-                + "; "
-                + shell(opens_socket("second")),
-            ],
-            image_matcher(PYTHON, "* second"),
-        )
-        tracer.spawn()
-
-        target = tracer.find_target(10)
-
-        assert (
-            Path(f"/proc/{target}/cmdline").read_bytes().split(b"\0")[-2]
-            == b"second"
-        )
-        tracer.release()
-        assert tracer.wait() == 0
-
-    def test_a_matching_process_that_opens_no_socket_is_skipped(
-        self,
-    ) -> None:
-        probe = shell([sys.executable, "-c", "pass"])
-        tracer = Tracer(
-            ["/bin/sh", "-c", probe + "; " + shell(opens_socket("second"))],
-            image_matcher(PYTHON, None),
-        )
-        tracer.spawn()
-
-        target = tracer.find_target(10)
-
-        assert (
-            Path(f"/proc/{target}/cmdline").read_bytes().split(b"\0")[-2]
-            == b"second"
-        )
-        tracer.release()
-        assert tracer.wait() == 0
-
-    def test_unix_sockets_do_not_hold_the_target(self) -> None:
-        program = "import socket; socket.socket(socket.AF_UNIX).close()"
-        tracer = Tracer(
-            [sys.executable, "-c", program + "; " + SOCKET],
-            image_matcher(None, None),
-        )
-        tracer.spawn()
-
-        tracer.find_target(10)
-        tracer.release()
-        assert tracer.wait() == 0
-
-    def test_a_scenario_that_never_starts_the_target_fails(self) -> None:
-        tracer = Tracer(["/bin/true"], image_matcher("never-*", None))
-        tracer.spawn()
-
-        with pytest.raises(
-            otel_conformance_obi.TraceError, match="exited before"
-        ):
-            tracer.find_target(10)
-
-    def test_a_target_that_opens_no_socket_fails(self) -> None:
-        tracer = Tracer(["/bin/true"], image_matcher(None, None))
-        tracer.spawn()
-
-        with pytest.raises(
-            otel_conformance_obi.TraceError, match="opened a socket"
-        ):
-            tracer.find_target(10)
-
-    def test_a_command_that_cannot_start_fails(self, tmp_path: Path) -> None:
-        tracer = Tracer([str(tmp_path / "missing")], image_matcher(None, None))
-
-        with pytest.raises(
-            otel_conformance_obi.TraceError, match="could not be started"
-        ):
-            tracer.spawn()
-
-
-class TestSignallingBeforeTheRootExists:
-    def test_kill_signals_nothing(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        signalled: list[tuple[int, int]] = []
-        monkeypatch.setattr(
-            otel_conformance_obi._ptrace.os,
-            "kill",
-            lambda pid, signum: signalled.append((pid, signum)),
-        )
-        tracer = Tracer(["true"], image_matcher(None, None))
-
-        tracer.kill()
-        tracer.signal_root(15)
-
-        assert signalled == []
+        assert exit_status(code) == status
 
 
 @linux_only
@@ -478,8 +310,23 @@ class TestRunningUnderOBI:
     def test_the_scenario_status_is_returned(
         self, environ: dict[str, str], tmp_path: Path
     ) -> None:
-        assert run(opens_socket(status=3), environ=environ) == 3
-        assert any((tmp_path / "output" / "obi").glob("*.log"))
+        assert run(gated(3), environ=environ) == 3
+        pid = (tmp_path / "attached").read_text()
+        assert (tmp_path / "output" / "obi" / f"{pid}.log").is_file()
+
+    def test_the_scenario_is_released_only_once_obi_attached_it(
+        self, environ: dict[str, str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("FAKE_OBI_MODE", "slow")
+
+        assert run(gated(), environ=environ) == 0
+
+    def test_a_wrapper_leaves_the_pid_to_the_process_it_starts(
+        self, environ: dict[str, str]
+    ) -> None:
+        command = ["/bin/sh", "-c", shell(gated()) + "; exit $?"]
+
+        assert run(command, environ=environ) == 0
 
     def test_obi_exiting_before_it_is_ready_fails(
         self, environ: dict[str, str], monkeypatch: pytest.MonkeyPatch
@@ -487,74 +334,42 @@ class TestRunningUnderOBI:
         monkeypatch.setenv("FAKE_OBI_MODE", "die-early")
 
         with pytest.raises(LauncherError, match="before instrumenting"):
-            run(opens_socket(), environ=environ)
+            run(gated(), environ=environ)
 
     def test_obi_exiting_while_the_scenario_runs_fails(
         self, environ: dict[str, str], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("FAKE_OBI_MODE", "die-later")
-        program = SOCKET + "; import time; time.sleep(1)"
 
         with pytest.raises(LauncherError, match="while the scenario ran"):
-            run([sys.executable, "-c", program], environ=environ)
+            run(gated(), environ=environ)
 
-    def test_a_command_that_cannot_start_leaves_the_caller_alone(
-        self, environ: dict[str, str], tmp_path: Path
+    def test_a_scenario_that_exits_before_the_gate_fails(
+        self, environ: dict[str, str]
     ) -> None:
-        launcher = subprocess.run(
-            [
-                sys.executable,
-                "-c",
-                "import sys; from otel_conformance_obi import main; "
-                f"sys.exit(main(['run', {str(tmp_path / 'missing')!r}]))",
-            ],
-            env={**os.environ, **environ},
-            capture_output=True,
-            text=True,
-            timeout=60,
-            check=False,
-            start_new_session=True,
-        )
+        with pytest.raises(LauncherError, match="status 5 before reaching"):
+            run([sys.executable, "-c", "raise SystemExit(5)"], environ=environ)
 
-        assert launcher.returncode == 1
-        assert "could not be started" in launcher.stderr
+    def test_a_scenario_that_never_reaches_the_gate_fails(
+        self, environ: dict[str, str]
+    ) -> None:
+        environ[READY_TIMEOUT_VARIABLE] = "0.5"
 
+        with pytest.raises(LauncherError, match="did not reach the gate"):
+            run(
+                [sys.executable, "-c", "import time; time.sleep(30)"],
+                environ=environ,
+            )
 
-class TestTheSocketFilter:
-    @pytest.mark.parametrize("machine", sorted(ARCHITECTURES))
-    def test_it_traces_only_inet_sockets(self, machine: str) -> None:
-        program = socket_filter(machine)
-        audit_arch, socket_nr = ARCHITECTURES[machine]
+    def test_a_command_that_cannot_start_says_so(
+        self,
+        environ: dict[str, str],
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        for name, value in environ.items():
+            monkeypatch.setenv(name, value)
 
-        def verdict(arch: int, nr: int, domain: int) -> int:
-            return run_bpf(program, {4: arch, 0: nr, 16: domain})
-
-        assert verdict(audit_arch, socket_nr, AF_INET) == SECCOMP_RET_TRACE
-        assert verdict(audit_arch, socket_nr, AF_INET6) == SECCOMP_RET_TRACE
-        assert verdict(audit_arch, socket_nr, 1) == SECCOMP_RET_ALLOW
-        assert verdict(audit_arch, socket_nr + 1, AF_INET) == SECCOMP_RET_ALLOW
-        assert verdict(0x40000003, socket_nr, AF_INET) == SECCOMP_RET_ALLOW
-
-    def test_an_unknown_machine_says_so(self) -> None:
-        with pytest.raises(otel_conformance_obi.TraceError, match="riscv64"):
-            socket_filter("riscv64")
-
-
-class TestRecognizingGoBinaries:
-    def test_the_build_info_marks_a_go_binary(self, tmp_path: Path) -> None:
-        binary = tmp_path / "server"
-        binary.write_bytes(
-            b"\x7fELF" + b"\0" * 64 + b"\xff Go buildinf:" + b"\0" * 16
-        )
-
-        assert is_go_executable(str(binary))
-
-    def test_another_executable_is_not(self) -> None:
-        assert not is_go_executable(sys.executable)
-
-    def test_an_empty_or_missing_file_is_not(self, tmp_path: Path) -> None:
-        empty = tmp_path / "empty"
-        empty.write_bytes(b"")
-
-        assert not is_go_executable(str(empty))
-        assert not is_go_executable(str(tmp_path / "missing"))
+        assert main(["run", str(tmp_path / "missing")]) == 1
+        assert "could not be started" in capsys.readouterr().err

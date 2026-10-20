@@ -14,6 +14,9 @@ import (
 )
 
 func main() {
+	if err := scenario.WaitAtGate(); err != nil {
+		log.Fatal(err)
+	}
 	stopping := make(chan error, 1)
 	go func() { stopping <- scenario.WaitForEOF(os.Stdin) }()
 	if err := scenarios.RunServer(nil, stopping); err != nil {

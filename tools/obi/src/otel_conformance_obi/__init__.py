@@ -13,15 +13,14 @@ agent into it. Two subcommands:
     the cache, then runs ``COMMAND`` — the scenario's own build step — so a
     single ``setup:`` covers both.
 
-``run [--target GLOB] [--argv GLOB] COMMAND...``
-    What a scenario's ``run:`` runs. Starts ``COMMAND`` and follows its
-    process tree to the process to instrument: ``COMMAND`` itself, or with
-    ``--target``/``--argv`` the first process whose executable name and
-    command line match. Holds that process at its first IPv4/IPv6 socket (a
-    Go binary at its exec), starts OBI selecting only it, resumes it once OBI
-    reports it instrumented, keeps OBI running for a settle period after
-    ``COMMAND`` exits so its exporters flush, then stops it. Exits with
-    ``COMMAND``'s status, or fails when OBI exits before it is stopped.
+``run COMMAND...``
+    What a scenario's ``run:`` runs. Starts ``COMMAND`` with
+    ``OTEL_CONFORMANCE_GATE`` naming a Unix socket, waits for the scenario to
+    send its PID there before its workload, starts OBI selecting only that
+    PID, releases the scenario once OBI reports it instrumented, keeps OBI
+    running for a settle period after ``COMMAND`` exits so its exporters
+    flush, then stops it. Exits with ``COMMAND``'s status, or fails when OBI
+    exits before it is stopped.
 """
 
 from __future__ import annotations
@@ -32,6 +31,7 @@ import platform
 import re
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tarfile
@@ -42,8 +42,6 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import IO, Mapping, Sequence
-
-from ._ptrace import TraceError, Tracer, image_matcher
 
 INSTALL = "install"
 
@@ -61,6 +59,12 @@ BINARY_VARIABLE = "OTEL_CONFORMANCE_OBI_BINARY"
 READY_TIMEOUT_VARIABLE = "OTEL_CONFORMANCE_OBI_READY_TIMEOUT"
 
 SETTLE_VARIABLE = "OTEL_CONFORMANCE_OBI_SETTLE"
+
+GATE_VARIABLE = "OTEL_CONFORMANCE_GATE"
+
+RELEASE = b"\n"
+
+POLL_INTERVAL = 0.05
 
 CONFIG_VARIABLE = "OTEL_CONFORMANCE_OBI_CONFIG"
 
@@ -235,22 +239,94 @@ class _Follower(threading.Thread):
                 self.ready.set()
 
 
+def exit_status(code: int) -> int:
+    return 128 - code if code < 0 else code
+
+
+class Scenario:
+    def __init__(self, command: Sequence[str], gate: Path) -> None:
+        self._listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self._listener.bind(str(gate))
+        self._listener.listen(1)
+        self._listener.settimeout(POLL_INTERVAL)
+        self._gate: socket.socket | None = None
+        try:
+            self.process = subprocess.Popen(  # noqa: S603
+                list(command), env={**os.environ, GATE_VARIABLE: str(gate)}
+            )
+        except OSError as error:
+            self._listener.close()
+            raise LauncherError(
+                f"{command[0]} could not be started: {error}"
+            ) from error
+
+    def status(self) -> int | None:
+        code = self.process.poll()
+        return None if code is None else exit_status(code)
+
+    def wait_at_gate(self, timeout: float) -> int:
+        deadline = time.monotonic() + timeout
+        while self._gate is None:
+            try:
+                self._gate, _ = self._listener.accept()
+            except TimeoutError:
+                status = self.status()
+                if status is not None:
+                    raise LauncherError(
+                        f"the scenario exited with status {status} before "
+                        f"reaching the gate in {GATE_VARIABLE}"
+                    ) from None
+                if time.monotonic() > deadline:
+                    raise LauncherError(
+                        f"the scenario did not reach the gate in "
+                        f"{GATE_VARIABLE} within {timeout:g}s"
+                    ) from None
+        self._gate.settimeout(max(deadline - time.monotonic(), POLL_INTERVAL))
+        try:
+            with self._gate.makefile("rb") as report:
+                return int(report.readline())
+        except (OSError, ValueError) as error:
+            raise LauncherError(
+                f"the scenario sent no PID to the gate: {error}"
+            ) from error
+
+    def release(self) -> None:
+        if self._gate is not None:
+            self._gate.sendall(RELEASE)
+        self.close()
+
+    def close(self) -> None:
+        if self._gate is not None:
+            self._gate.close()
+        self._listener.close()
+
+    def signal(self, signum: int) -> None:
+        if self.process.poll() is None:
+            self.process.send_signal(signum)
+
+    def kill(self) -> None:
+        self.close()
+        if self.process.poll() is None:
+            self.process.kill()
+        self.process.wait()
+
+
 def _wait_ready(
     obi: subprocess.Popen[bytes],
     follower: _Follower,
-    tracer: Tracer,
+    scenario: Scenario,
     timeout: float,
 ) -> None:
     deadline = time.monotonic() + timeout
-    while not follower.ready.is_set():
-        tracer.service()
+    while not follower.ready.wait(POLL_INTERVAL):
         if obi.poll() is not None:
             raise LauncherError(
                 f"OBI exited with status {obi.returncode} before instrumenting"
             )
-        if tracer.status is not None:
+        status = scenario.status()
+        if status is not None:
             raise LauncherError(
-                f"the scenario exited with status {tracer.status} before OBI "
+                f"the scenario exited with status {status} before OBI "
                 "instrumented it"
             )
         if time.monotonic() > deadline:
@@ -281,8 +357,6 @@ def _tail(path: Path, lines: int = 40) -> str:
 
 def run(
     command: Sequence[str],
-    target: str | None = None,
-    argv: str | None = None,
     environ: Mapping[str, str] = os.environ,
 ) -> int:
     if not sys.platform.startswith("linux"):
@@ -300,58 +374,58 @@ def run(
     settle = float(environ.get(SETTLE_VARIABLE, DEFAULT_SETTLE))
     template = config_template(environ).read_text(encoding="utf-8")
 
-    tracer = Tracer(command, image_matcher(target, argv))
+    scenario: Scenario | None = None
+
+    def forward(signum: int, _frame: object) -> None:
+        if scenario is not None:
+            scenario.signal(signum)
+
     for forwarded in (signal.SIGINT, signal.SIGTERM):
-        signal.signal(
-            forwarded, lambda signum, _frame: tracer.signal_root(signum)
-        )
+        signal.signal(forwarded, forward)
     obi: subprocess.Popen[bytes] | None = None
     log_path: Path | None = None
-    try:
-        tracer.spawn()
-        pid = tracer.find_target(ready_timeout)
-        LOG_DIR.mkdir(parents=True, exist_ok=True)
-        log_path = (LOG_DIR / f"{pid}.log").resolve()
-        with (
-            tempfile.TemporaryDirectory() as scratch,
-            log_path.open("wb") as log,
-        ):
-            config = Path(scratch) / "obi.yaml"
-            config.write_text(
-                render_config(template, pid, environ), encoding="utf-8"
-            )
-            obi = subprocess.Popen(  # noqa: S603
-                obi_command(executable, config),
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-            )
-            assert obi.stdout is not None
-            follower = _Follower(obi.stdout, log, pid)
-            follower.start()
-            _wait_ready(obi, follower, tracer, ready_timeout)
-            tracer.release()
-            status = tracer.wait()
-            deadline = time.monotonic() + settle
-            while time.monotonic() < deadline and obi.poll() is None:
-                time.sleep(0.05)
-            if obi.poll() is not None:
-                raise LauncherError(
-                    f"OBI exited with status {obi.returncode} while the "
-                    "scenario ran"
+    with tempfile.TemporaryDirectory() as scratch:
+        try:
+            scenario = Scenario(command, Path(scratch) / "gate")
+            pid = scenario.wait_at_gate(ready_timeout)
+            LOG_DIR.mkdir(parents=True, exist_ok=True)
+            log_path = (LOG_DIR / f"{pid}.log").resolve()
+            with log_path.open("wb") as log:
+                config = Path(scratch) / "obi.yaml"
+                config.write_text(
+                    render_config(template, pid, environ), encoding="utf-8"
                 )
-            _stop(obi)
-            follower.join(STOP_TIMEOUT)
-        return status
-    except BaseException as error:
-        tracer.kill()
-        if obi is not None:
-            _stop(obi)
-        if log_path is not None:
-            print(_tail(log_path), file=sys.stderr)
-        if isinstance(error, TraceError):
-            raise LauncherError(str(error)) from error
-        raise
+                obi = subprocess.Popen(  # noqa: S603
+                    obi_command(executable, config),
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                )
+                assert obi.stdout is not None
+                follower = _Follower(obi.stdout, log, pid)
+                follower.start()
+                _wait_ready(obi, follower, scenario, ready_timeout)
+                scenario.release()
+                status = exit_status(scenario.process.wait())
+                deadline = time.monotonic() + settle
+                while time.monotonic() < deadline and obi.poll() is None:
+                    time.sleep(POLL_INTERVAL)
+                if obi.poll() is not None:
+                    raise LauncherError(
+                        f"OBI exited with status {obi.returncode} while the "
+                        "scenario ran"
+                    )
+                _stop(obi)
+                follower.join(STOP_TIMEOUT)
+            return status
+        except BaseException:
+            if scenario is not None:
+                scenario.kill()
+            if obi is not None:
+                _stop(obi)
+            if log_path is not None:
+                print(_tail(log_path), file=sys.stderr)
+            raise
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -365,13 +439,6 @@ def _parser() -> argparse.ArgumentParser:
     )
     install_parser.add_argument("command", nargs=argparse.REMAINDER)
     run_parser = commands.add_parser(RUN, help="run COMMAND under OBI")
-    run_parser.add_argument(
-        "--target",
-        help="glob on the executable name of the process to instrument",
-    )
-    run_parser.add_argument(
-        "--argv", help="glob on the command line of the process to instrument"
-    )
     run_parser.add_argument("command", nargs=argparse.REMAINDER)
     return parser
 
@@ -393,7 +460,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return subprocess.call(command)  # noqa: S603
             except OSError as error:
                 raise LauncherError(f"{command[0]}: {error}") from error
-        return run(command, arguments.target, arguments.argv)
+        return run(command)
     except LauncherError as error:
         print(f"otel-conformance-obi: {error}", file=sys.stderr)
         return 1
