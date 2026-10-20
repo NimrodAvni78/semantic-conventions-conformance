@@ -4,12 +4,9 @@
 package scenario
 
 import (
-	"bufio"
 	"errors"
-	"net"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"testing/iotest"
@@ -75,71 +72,10 @@ func TestWaitAtGateWithoutAGateReturns(t *testing.T) {
 	}
 }
 
-func TestWaitAtGateReportsThePIDAndWaitsForTheRelease(t *testing.T) {
-	path := gatePath(t)
-	listener, err := net.Listen("unix", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer listener.Close()
-	t.Setenv(GateVariable, path)
-	reported := make(chan string, 1)
-	go func() {
-		conn, err := listener.Accept()
-		if err != nil {
-			reported <- err.Error()
-			return
-		}
-		defer conn.Close()
-		line, _ := bufio.NewReader(conn).ReadString('\n')
-		reported <- line
-		_, _ = conn.Write([]byte("\n"))
-	}()
-
-	err = WaitAtGate()
-
-	if err != nil {
-		t.Errorf("WaitAtGate() returned %v", err)
-	}
-	if got, want := <-reported, strconv.Itoa(os.Getpid())+"\n"; got != want {
-		t.Errorf("the gate received %q, want %q", got, want)
-	}
-}
-
-func TestWaitAtGateFailsWhenClosedWithoutARelease(t *testing.T) {
-	path := gatePath(t)
-	listener, err := net.Listen("unix", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer listener.Close()
-	t.Setenv(GateVariable, path)
-	go func() {
-		if conn, err := listener.Accept(); err == nil {
-			_, _ = bufio.NewReader(conn).ReadString('\n')
-			_ = conn.Close()
-		}
-	}()
-
-	if err := WaitAtGate(); err == nil || !strings.Contains(err.Error(), "waiting at the gate") {
-		t.Errorf("WaitAtGate() returned %v, want an error waiting at the gate", err)
-	}
-}
-
-func TestWaitAtGateFailsWithoutAListener(t *testing.T) {
-	t.Setenv(GateVariable, gatePath(t))
+func TestWaitAtGateFailsWithoutAGate(t *testing.T) {
+	t.Setenv(GateVariable, filepath.Join(t.TempDir(), "missing"))
 
 	if err := WaitAtGate(); err == nil || !strings.Contains(err.Error(), "reaching the gate") {
 		t.Errorf("WaitAtGate() returned %v, want an error reaching the gate", err)
 	}
-}
-
-func gatePath(t *testing.T) string {
-	t.Helper()
-	dir, err := os.MkdirTemp("", "gate")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	return filepath.Join(dir, "gate")
 }

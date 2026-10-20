@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import subprocess
 import sys
 import textwrap
 import urllib.error
@@ -23,6 +24,7 @@ from otel_conformance_obi import (
     archive_url,
     binary,
     cache_dir,
+    check_host,
     config_template,
     exit_status,
     install,
@@ -105,14 +107,12 @@ FAKE_OBI = textwrap.dedent(
 
 GATED = textwrap.dedent(
     """\
-    import os, pathlib, socket, sys
-    gate = socket.socket(socket.AF_UNIX)
-    gate.connect(os.environ["OTEL_CONFORMANCE_GATE"])
-    gate.sendall(f"{os.getpid()}\\n".encode())
-    released = gate.recv(1)
+    import os, pathlib, sys
+    with open(os.environ["OTEL_CONFORMANCE_GATE"], "rb") as gate:
+        gate.read()
     attached = pathlib.Path("attached")
     instrumented = attached.exists() and attached.read_text() == str(os.getpid())
-    sys.exit(int(sys.argv[1]) if released and instrumented else 99)
+    sys.exit(int(sys.argv[1]) if instrumented else 99)
     """
 )
 
@@ -146,7 +146,84 @@ def rendered(
     )
 
 
+class TestTheHostCheck:
+    @staticmethod
+    def sudo(
+        monkeypatch: pytest.MonkeyPatch, euid: int, status: int | None
+    ) -> list[list[str]]:
+        calls: list[list[str]] = []
+
+        def fake_run(
+            command: list[str], **_: object
+        ) -> subprocess.CompletedProcess[bytes]:
+            calls.append(command)
+            if status is None:
+                raise FileNotFoundError(command[0])
+            return subprocess.CompletedProcess(command, status)
+
+        monkeypatch.setattr(sys, "platform", "linux")
+        monkeypatch.setattr(
+            otel_conformance_obi.os, "geteuid", lambda: euid, raising=False
+        )
+        monkeypatch.setattr(otel_conformance_obi.subprocess, "run", fake_run)
+        return calls
+
+    def test_another_platform_is_refused(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(sys, "platform", "darwin")
+
+        with pytest.raises(LauncherError, match="Linux only"):
+            check_host()
+
+    def test_root_needs_no_sudo(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        calls = self.sudo(monkeypatch, euid=0, status=1)
+
+        check_host()
+
+        assert calls == []
+
+    def test_passwordless_sudo_is_enough(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls = self.sudo(monkeypatch, euid=1000, status=0)
+
+        check_host()
+
+        assert calls == [["sudo", "-n", "true"]]
+
+    @pytest.mark.parametrize("status", [1, None])
+    def test_without_sudo_it_is_refused(
+        self, monkeypatch: pytest.MonkeyPatch, status: int | None
+    ) -> None:
+        self.sudo(monkeypatch, euid=1000, status=status)
+
+        with pytest.raises(LauncherError, match="needs root"):
+            check_host()
+
+    def test_a_refused_host_runs_no_setup_command(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        monkeypatch.setattr(sys, "platform", "darwin")
+        marker = tmp_path / "ran"
+
+        status = main(
+            ["install", "--", "touch", str(marker)],
+        )
+
+        assert status == 1
+        assert not marker.exists()
+        assert "Linux only" in capsys.readouterr().err
+
+
 class TestTheRelease:
+    @pytest.fixture(autouse=True)
+    def any_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(otel_conformance_obi, "check_host", lambda: None)
+
     def test_the_version_is_pinned(self) -> None:
         assert version().startswith("v")
 
@@ -336,15 +413,17 @@ class TestTheInstrumentedProcessesMetric:
         """
     )
 
-    def test_a_counted_executable_is_instrumented(self) -> None:
-        assert instrumented(self.EXPOSITION, "scenario")
+    def test_a_counted_process_is_instrumented(self) -> None:
+        assert instrumented(self.EXPOSITION)
 
-    def test_a_zero_count_is_not(self) -> None:
-        assert not instrumented(self.EXPOSITION, "java")
+    def test_only_zero_counts_are_not(self) -> None:
+        assert not instrumented(
+            'obi_instrumented_processes{process_executable_name="java"} 0\n'
+        )
 
-    def test_an_absent_executable_is_not(self) -> None:
-        assert not instrumented(self.EXPOSITION, "python3")
-        assert not instrumented("", "scenario")
+    def test_no_series_is_not(self) -> None:
+        assert not instrumented("obi_tracer_flushes_count 3\n")
+        assert not instrumented("")
 
 
 class TestTheExitStatus:
@@ -395,7 +474,7 @@ class TestRunningUnderOBI:
 
         assert run(gated(), args=SELECT_GATED, environ=environ) == 0
 
-    def test_a_wrapper_leaves_the_pid_to_the_process_it_starts(
+    def test_a_wrapped_scenario_is_selected_by_its_command_line(
         self, environ: dict[str, str]
     ) -> None:
         command = ["/bin/sh", "-c", shell(gated()) + "; exit $?"]

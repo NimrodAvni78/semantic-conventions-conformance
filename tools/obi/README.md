@@ -25,10 +25,10 @@ directory's own build step: `setup:` is one command.
 
 `run [--exe GLOB] [--args GLOB] COMMAND...` runs a scenario:
 
-1. Starts `COMMAND` with `OTEL_CONFORMANCE_GATE` naming a Unix socket the
-   launcher listens on.
+1. Starts `COMMAND` with `OTEL_CONFORMANCE_GATE` naming a named pipe.
 2. Waits for the scenario to reach the gate: before its workload, the
-   scenario connects, sends its PID and blocks. In Go the gate is
+   scenario opens the pipe and reads it until end of file, which cannot come
+   while the launcher holds the write end. In Go the gate is
    [`scenario.WaitAtGate`](../go/scenario).
 3. Starts OBI with [`obi.yaml`](src/otel_conformance_obi/obi.yaml) selecting
    processes by OBI's own process match: `--exe` on the resolved executable
@@ -37,9 +37,10 @@ directory's own build step: `setup:` is one command.
    directly. A scenario behind a wrapper names what the wrapper finally runs,
    usually with `--args`: the Python interpreter and the Java runtime are the
    same executable as the mock server and every other scenario.
-4. Releases the scenario once OBI's `obi_instrumented_processes` internal
-   metric counts the gated process's executable. OBI raises it after it
-   registered the process, so the first request is measured.
+4. Closes the pipe, releasing the scenario, once OBI's
+   `obi_instrumented_processes` internal metric counts a process. OBI raises
+   it after it registered the process, and only processes the selector
+   matches are counted, so the first request is measured.
 5. After `COMMAND` exits, keeps OBI running for the settle period, longer than
    both the span batch delay and the metric export interval, then stops it.
    OBI does not export what it still buffers when it is stopped.
@@ -55,7 +56,10 @@ the scenario exits before OBI attached to it, so a missing signal in the
 report is never a crashed agent.
 
 OBI needs root and a Linux kernel with BTF. The launcher runs it with
-`sudo -n` when it is not root, which the GitHub-hosted runners allow.
+`sudo -n` when it is not root, which the GitHub-hosted runners allow. `install`
+fails on any other platform, and without root or passwordless `sudo -n`, so
+the runner stops at `setup:` instead of recording an empty run over the
+committed `data.json`.
 
 ## Configuration
 

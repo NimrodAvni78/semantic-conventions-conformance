@@ -15,7 +15,7 @@ agent into it. Two subcommands:
 
 ``run [--exe GLOB] [--args GLOB] COMMAND...``
     What a scenario's ``run:`` runs. Starts ``COMMAND`` with
-    ``OTEL_CONFORMANCE_GATE`` naming a Unix socket, waits for the scenario to
+    ``OTEL_CONFORMANCE_GATE`` naming a named pipe, waits for the scenario to
     reach it before its workload, starts OBI selecting processes by
     executable path and command line (by default ``COMMAND``'s own
     executable), releases the scenario once OBI's ``instrumented_processes``
@@ -27,6 +27,7 @@ agent into it. Two subcommands:
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import os
 import platform
@@ -63,8 +64,6 @@ READY_TIMEOUT_VARIABLE = "OTEL_CONFORMANCE_OBI_READY_TIMEOUT"
 SETTLE_VARIABLE = "OTEL_CONFORMANCE_OBI_SETTLE"
 
 GATE_VARIABLE = "OTEL_CONFORMANCE_GATE"
-
-RELEASE = b"\n"
 
 POLL_INTERVAL = 0.05
 
@@ -132,7 +131,31 @@ def binary(environ: Mapping[str, str] = os.environ) -> Path:
     return cache_dir(version(), environ) / BINARY
 
 
+def check_host() -> None:
+    if not sys.platform.startswith("linux"):
+        raise LauncherError("OBI runs on Linux only")
+    if os.geteuid() == 0:
+        return
+    try:
+        allowed = (
+            subprocess.run(  # noqa: S603
+                ["sudo", "-n", "true"],  # noqa: S607
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                check=False,
+            ).returncode
+            == 0
+        )
+    except OSError:
+        allowed = False
+    if not allowed:
+        raise LauncherError(
+            "OBI needs root: run as root or allow passwordless `sudo -n`"
+        )
+
+
 def install(environ: Mapping[str, str] = os.environ) -> Path:
+    check_host()
     if environ.get(BINARY_VARIABLE):
         return binary(environ)
     release = version()
@@ -219,13 +242,13 @@ def render_config(
     return re.sub(r"\$\{([A-Z0-9_]+)\}", substitute, template)
 
 
-def instrumented(exposition: str, executable: str) -> bool:
+def instrumented(exposition: str) -> bool:
     for sample in INSTRUMENTED_PROCESSES.finditer(exposition):
-        if sample["name"] == executable:
-            try:
-                return float(sample["value"]) > 0
-            except ValueError:
-                return False
+        try:
+            if float(sample["value"]) > 0:
+                return True
+        except ValueError:
+            continue
     return False
 
 
@@ -270,17 +293,14 @@ def exit_status(code: int) -> int:
 
 class Scenario:
     def __init__(self, command: Sequence[str], gate: Path) -> None:
-        self._listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self._listener.bind(str(gate))
-        self._listener.listen(1)
-        self._listener.settimeout(POLL_INTERVAL)
-        self._gate: socket.socket | None = None
+        os.mkfifo(gate, 0o600)
+        self._path = gate
+        self._gate: int | None = None
         try:
             self.process = subprocess.Popen(  # noqa: S603
                 list(command), env={**os.environ, GATE_VARIABLE: str(gate)}
             )
         except OSError as error:
-            self._listener.close()
             raise LauncherError(
                 f"{command[0]} could not be started: {error}"
             ) from error
@@ -289,12 +309,14 @@ class Scenario:
         code = self.process.poll()
         return None if code is None else exit_status(code)
 
-    def wait_at_gate(self, timeout: float) -> int:
+    def wait_at_gate(self, timeout: float) -> None:
         deadline = time.monotonic() + timeout
         while self._gate is None:
             try:
-                self._gate, _ = self._listener.accept()
-            except TimeoutError:
+                self._gate = os.open(self._path, os.O_WRONLY | os.O_NONBLOCK)
+            except OSError as error:
+                if error.errno != errno.ENXIO:
+                    raise
                 status = self.status()
                 if status is not None:
                     raise LauncherError(
@@ -306,45 +328,32 @@ class Scenario:
                         f"the scenario did not reach the gate in "
                         f"{GATE_VARIABLE} within {timeout:g}s"
                     ) from None
-        self._gate.settimeout(max(deadline - time.monotonic(), POLL_INTERVAL))
-        try:
-            with self._gate.makefile("rb") as report:
-                return int(report.readline())
-        except (OSError, ValueError) as error:
-            raise LauncherError(
-                f"the scenario sent no PID to the gate: {error}"
-            ) from error
+                time.sleep(POLL_INTERVAL)
 
     def release(self) -> None:
         if self._gate is not None:
-            self._gate.sendall(RELEASE)
-        self.close()
-
-    def close(self) -> None:
-        if self._gate is not None:
-            self._gate.close()
-        self._listener.close()
+            os.close(self._gate)
+            self._gate = None
 
     def signal(self, signum: int) -> None:
         if self.process.poll() is None:
             self.process.send_signal(signum)
 
     def kill(self) -> None:
-        self.close()
         if self.process.poll() is None:
             self.process.kill()
         self.process.wait()
+        self.release()
 
 
 def _wait_ready(
     obi: subprocess.Popen[bytes],
     scenario: Scenario,
     metrics_port: int,
-    executable: str,
     timeout: float,
 ) -> None:
     deadline = time.monotonic() + timeout
-    while not instrumented(_scrape(metrics_port), executable):
+    while not instrumented(_scrape(metrics_port)):
         time.sleep(POLL_INTERVAL)
         if obi.poll() is not None:
             raise LauncherError(
@@ -417,11 +426,10 @@ def run(
     with tempfile.TemporaryDirectory() as scratch:
         try:
             scenario = Scenario(command, Path(scratch) / "gate")
-            pid = scenario.wait_at_gate(ready_timeout)
-            name = Path(os.readlink(f"/proc/{pid}/exe")).name
+            scenario.wait_at_gate(ready_timeout)
             metrics_port = free_port()
             LOG_DIR.mkdir(parents=True, exist_ok=True)
-            log_path = (LOG_DIR / f"{pid}.log").resolve()
+            log_path = (LOG_DIR / f"{scenario.process.pid}.log").resolve()
             with log_path.open("wb") as log:
                 config = Path(scratch) / "obi.yaml"
                 config.write_text(
@@ -437,7 +445,7 @@ def run(
                 assert obi.stdout is not None
                 follower = _Follower(obi.stdout, log)
                 follower.start()
-                _wait_ready(obi, scenario, metrics_port, name, ready_timeout)
+                _wait_ready(obi, scenario, metrics_port, ready_timeout)
                 scenario.release()
                 status = exit_status(scenario.process.wait())
                 deadline = time.monotonic() + settle
