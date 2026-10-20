@@ -19,7 +19,6 @@ from otel_conformance_obi import (
     READY_TIMEOUT_VARIABLE,
     SETTLE_VARIABLE,
     LauncherError,
-    Readiness,
     architecture,
     archive_url,
     binary,
@@ -27,7 +26,9 @@ from otel_conformance_obi import (
     config_template,
     exit_status,
     install,
+    instrumented,
     main,
+    process_match,
     render_config,
     run,
     version,
@@ -35,30 +36,71 @@ from otel_conformance_obi import (
 
 ENDPOINT = "http://127.0.0.1:4317"
 
-ATTACHED = 'level=DEBUG msg="new executable for discovered process" component=discover.traceAttacher pid={pid} child=[]'
+MARKER = "gated-scenario"
 
-DONE = "level=DEBUG msg=.done component=discover.traceAttacher"
+SELECT_GATED = f"* {MARKER}"
 
 FAKE_OBI = textwrap.dedent(
     """\
-    import os, re, signal, sys, time
-    config = open(sys.argv[sys.argv.index("-config") + 1]).read()
-    pid = re.search(r"target_pids: \\[(\\d+)\\]", config).group(1)
+    import fnmatch, http.server, os, signal, sys, threading, time, yaml
+    config = yaml.safe_load(open(sys.argv[sys.argv.index("-config") + 1]))
+    obi = config["extensions"]["obi"]
+    port = obi["daemon"]["internal_metrics"]["prometheus"]["port"]
+    selector = obi["capture"]["rules"][0]["match"]["process"]
     mode = os.environ.get("FAKE_OBI_MODE", "ready")
     if mode == "die-early":
         sys.exit(3)
+    attached = []
+
+    class Metrics(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = "".join(
+                f'obi_instrumented_processes{{process_executable_name="{name}"}} 1\\n'
+                for name in attached
+            ).encode()
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", port), Metrics)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+    def matches(pid):
+        try:
+            exe = os.path.realpath(f"/proc/{pid}/exe")
+            argv = open(f"/proc/{pid}/cmdline", "rb").read().decode().split("\\0")
+        except OSError:
+            return False
+        args = " ".join(argv[1:]).strip()
+        return all(
+            fnmatch.fnmatchcase(value, selector[key][0])
+            for key, value in (("exe_path_glob", exe), ("cmd_args_glob", args))
+            if key in selector
+        )
+
     if mode == "slow":
         time.sleep(0.5)
-    open("attached", "w").write(pid)
-    print({attached!r}.format(pid=pid), flush=True)
-    print({done!r}, flush=True)
+    found = None
+    while found is None:
+        for entry in os.listdir("/proc"):
+            if entry.isdigit() and int(entry) not in (os.getpid(), os.getppid()) and matches(entry):
+                found = int(entry)
+                break
+        time.sleep(0.05)
+    open("attached", "w").write(str(found))
+    attached.append(os.path.basename(os.path.realpath(f"/proc/{found}/exe")))
     if mode == "die-later":
+        while os.path.exists(f"/proc/{found}"):
+            time.sleep(0.01)
         sys.exit(4)
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     while True:
         time.sleep(0.05)
     """
-).format(attached=ATTACHED, done=DONE)
+)
 
 
 GATED = textwrap.dedent(
@@ -76,7 +118,7 @@ GATED = textwrap.dedent(
 
 
 def gated(status: int = 0) -> list[str]:
-    return [sys.executable, "-c", GATED, str(status)]
+    return [sys.executable, "-c", GATED, str(status), MARKER]
 
 
 def shell(command: list[str]) -> str:
@@ -88,10 +130,19 @@ linux_only = pytest.mark.skipif(
 )
 
 
-def rendered(pid: int = 4242, **environ: str) -> dict:
+def rendered(
+    selector: dict[str, list[str]] | None = None,
+    port: int = 9400,
+    **environ: str,
+) -> dict:
     environ.setdefault("OTEL_EXPORTER_OTLP_ENDPOINT", ENDPOINT)
     return yaml.safe_load(
-        render_config(config_template({}).read_text(), pid, environ)
+        render_config(
+            config_template({}).read_text(),
+            selector or {"exe_path_glob": ["/srv/scenario"]},
+            port,
+            environ,
+        )
     )
 
 
@@ -184,14 +235,25 @@ class TestTheConfig:
         assert config["file_format"] == "1.0"
         assert config["extensions"]["obi"]["version"] == "2.0"
 
-    def test_it_selects_only_the_scenario_process(self) -> None:
-        capture = rendered(pid=31337)["extensions"]["obi"]["capture"]
+    def test_it_selects_only_the_matching_processes(self) -> None:
+        selector = {"exe_path_glob": ["/srv/java"], "cmd_args_glob": ["*Main"]}
+
+        capture = rendered(selector)["extensions"]["obi"]["capture"]
 
         assert capture["policy"]["default_action"] == "exclude"
-        assert [
-            rule["match"]["process"]["target_pids"]
-            for rule in capture["rules"]
-        ] == [[31337]]
+        assert [rule["match"]["process"] for rule in capture["rules"]] == [
+            selector
+        ]
+
+    def test_it_exposes_the_instrumented_processes_metric(self) -> None:
+        internal = rendered(port=9123)["extensions"]["obi"]["daemon"][
+            "internal_metrics"
+        ]
+
+        assert internal == {
+            "exporter": "prometheus",
+            "prometheus": {"port": 9123, "path": "/metrics"},
+        }
 
     def test_it_exports_to_the_runner(self) -> None:
         config = rendered()
@@ -223,7 +285,7 @@ class TestTheConfig:
 
     def test_a_missing_endpoint_says_so(self) -> None:
         with pytest.raises(LauncherError, match="OTEL_EXPORTER_OTLP_ENDPOINT"):
-            render_config("log_level: debug\n", 1, {})
+            render_config("log_level: info\n", {}, 1, {})
 
     def test_only_grpc_is_exported(self) -> None:
         with pytest.raises(LauncherError, match="http/protobuf"):
@@ -232,15 +294,8 @@ class TestTheConfig:
     def test_an_unknown_reference_says_so(self) -> None:
         with pytest.raises(LauncherError, match="NOPE"):
             render_config(
-                "log_level: debug\nx: ${NOPE}",
-                1,
-                {"OTEL_EXPORTER_OTLP_ENDPOINT": ENDPOINT},
-            )
-
-    def test_a_template_without_debug_logging_says_so(self) -> None:
-        with pytest.raises(LauncherError, match="log_level: debug"):
-            render_config(
-                "log_level: info\n",
+                "x: ${NOPE}",
+                {},
                 1,
                 {"OTEL_EXPORTER_OTLP_ENDPOINT": ENDPOINT},
             )
@@ -251,26 +306,45 @@ class TestTheConfig:
         assert config_template({CONFIG_VARIABLE: str(other)}) == other
 
 
-class TestReadiness:
-    def test_ready_once_the_attach_of_the_pid_is_done(self) -> None:
-        readiness = Readiness(42)
+class TestTheSelector:
+    def test_by_default_it_is_the_resolved_command(self) -> None:
+        assert process_match([sys.executable]) == {
+            "exe_path_glob": [str(Path(sys.executable).resolve())]
+        }
 
-        assert not readiness.feed(ATTACHED.format(pid=42))
-        assert readiness.feed(DONE)
+    def test_the_globs_replace_the_default(self) -> None:
+        assert process_match(["uv", "run"], args="*main.py") == {
+            "cmd_args_glob": ["*main.py"]
+        }
+        assert process_match(["uv"], exe="*/python3*", args="*main.py") == {
+            "exe_path_glob": ["*/python3*"],
+            "cmd_args_glob": ["*main.py"],
+        }
 
-    def test_done_before_the_attach_is_not_ready(self) -> None:
-        readiness = Readiness(42)
+    def test_a_command_that_is_not_found_says_so(self, tmp_path: Path) -> None:
+        with pytest.raises(LauncherError, match="could not be started"):
+            process_match([str(tmp_path / "missing")])
 
-        assert not readiness.feed(DONE)
-        assert not readiness.feed(
-            'level=INFO msg="instrumenting process" pid=42'
-        )
 
-    def test_another_pid_is_not(self) -> None:
-        readiness = Readiness(42)
+class TestTheInstrumentedProcessesMetric:
+    EXPOSITION = textwrap.dedent(
+        """\
+        # TYPE obi_instrumented_processes gauge
+        obi_instrumented_processes{process_executable_name="java"} 0
+        obi_instrumented_processes{process_executable_name="scenario"} 1
+        obi_tracer_flushes_count 3
+        """
+    )
 
-        assert not readiness.feed(ATTACHED.format(pid=421))
-        assert not readiness.feed(DONE)
+    def test_a_counted_executable_is_instrumented(self) -> None:
+        assert instrumented(self.EXPOSITION, "scenario")
+
+    def test_a_zero_count_is_not(self) -> None:
+        assert not instrumented(self.EXPOSITION, "java")
+
+    def test_an_absent_executable_is_not(self) -> None:
+        assert not instrumented(self.EXPOSITION, "python3")
+        assert not instrumented("", "scenario")
 
 
 class TestTheExitStatus:
@@ -310,7 +384,7 @@ class TestRunningUnderOBI:
     def test_the_scenario_status_is_returned(
         self, environ: dict[str, str], tmp_path: Path
     ) -> None:
-        assert run(gated(3), environ=environ) == 3
+        assert run(gated(3), args=SELECT_GATED, environ=environ) == 3
         pid = (tmp_path / "attached").read_text()
         assert (tmp_path / "output" / "obi" / f"{pid}.log").is_file()
 
@@ -319,14 +393,22 @@ class TestRunningUnderOBI:
     ) -> None:
         monkeypatch.setenv("FAKE_OBI_MODE", "slow")
 
-        assert run(gated(), environ=environ) == 0
+        assert run(gated(), args=SELECT_GATED, environ=environ) == 0
 
     def test_a_wrapper_leaves_the_pid_to_the_process_it_starts(
         self, environ: dict[str, str]
     ) -> None:
         command = ["/bin/sh", "-c", shell(gated()) + "; exit $?"]
 
-        assert run(command, environ=environ) == 0
+        assert run(command, args=SELECT_GATED, environ=environ) == 0
+
+    def test_a_selector_that_misses_the_scenario_fails(
+        self, environ: dict[str, str]
+    ) -> None:
+        environ[READY_TIMEOUT_VARIABLE] = "1"
+
+        with pytest.raises(LauncherError, match="did not instrument"):
+            run(gated(), args="* another-scenario", environ=environ)
 
     def test_obi_exiting_before_it_is_ready_fails(
         self, environ: dict[str, str], monkeypatch: pytest.MonkeyPatch
@@ -334,7 +416,7 @@ class TestRunningUnderOBI:
         monkeypatch.setenv("FAKE_OBI_MODE", "die-early")
 
         with pytest.raises(LauncherError, match="before instrumenting"):
-            run(gated(), environ=environ)
+            run(gated(), args=SELECT_GATED, environ=environ)
 
     def test_obi_exiting_while_the_scenario_runs_fails(
         self, environ: dict[str, str], monkeypatch: pytest.MonkeyPatch
@@ -342,7 +424,7 @@ class TestRunningUnderOBI:
         monkeypatch.setenv("FAKE_OBI_MODE", "die-later")
 
         with pytest.raises(LauncherError, match="while the scenario ran"):
-            run(gated(), environ=environ)
+            run(gated(), args=SELECT_GATED, environ=environ)
 
     def test_a_scenario_that_exits_before_the_gate_fails(
         self, environ: dict[str, str]

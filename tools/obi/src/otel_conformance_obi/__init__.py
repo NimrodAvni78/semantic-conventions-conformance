@@ -13,19 +13,21 @@ agent into it. Two subcommands:
     the cache, then runs ``COMMAND`` — the scenario's own build step — so a
     single ``setup:`` covers both.
 
-``run COMMAND...``
+``run [--exe GLOB] [--args GLOB] COMMAND...``
     What a scenario's ``run:`` runs. Starts ``COMMAND`` with
     ``OTEL_CONFORMANCE_GATE`` naming a Unix socket, waits for the scenario to
-    send its PID there before its workload, starts OBI selecting only that
-    PID, releases the scenario once OBI reports it instrumented, keeps OBI
-    running for a settle period after ``COMMAND`` exits so its exporters
-    flush, then stops it. Exits with ``COMMAND``'s status, or fails when OBI
-    exits before it is stopped.
+    reach it before its workload, starts OBI selecting processes by
+    executable path and command line (by default ``COMMAND``'s own
+    executable), releases the scenario once OBI's ``instrumented_processes``
+    metric counts it, keeps OBI running for a settle period after ``COMMAND``
+    exits so its exporters flush, then stops it. Exits with ``COMMAND``'s
+    status, or fails when OBI exits before it is stopped.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import platform
 import re
@@ -80,13 +82,11 @@ STOP_TIMEOUT = 30.0
 
 LOG_DIR = Path("output") / "obi"
 
-ATTACHED_MESSAGE = "new executable for discovered process"
-
-DONE_MESSAGE = "msg=.done"
-
-ATTACHER_COMPONENT = "component=discover.traceAttacher"
-
-DEBUG_LOG_LEVEL = re.compile(r"^log_level:\s*debug\s*$", re.MULTILINE)
+INSTRUMENTED_PROCESSES = re.compile(
+    r"^obi_instrumented_processes\{[^}]*"
+    r'process_executable_name="(?P<name>[^"]*)"[^}]*\}\s+(?P<value>\S+)$',
+    re.MULTILINE,
+)
 
 ARCHITECTURES = {
     "x86_64": "amd64",
@@ -173,20 +173,39 @@ def config_template(environ: Mapping[str, str] = os.environ) -> Path:
     return Path(override) if override else Path(__file__).with_name(CONFIG)
 
 
-def render_config(template: str, pid: int, environ: Mapping[str, str]) -> str:
+def process_match(
+    command: Sequence[str], exe: str | None = None, args: str | None = None
+) -> dict[str, list[str]]:
+    if exe is None and args is None:
+        resolved = shutil.which(command[0])
+        if resolved is None:
+            raise LauncherError(
+                f"{command[0]} could not be started: not found"
+            )
+        exe = os.path.realpath(resolved)
+    match: dict[str, list[str]] = {}
+    if exe is not None:
+        match["exe_path_glob"] = [exe]
+    if args is not None:
+        match["cmd_args_glob"] = [args]
+    return match
+
+
+def render_config(
+    template: str,
+    selector: Mapping[str, list[str]],
+    metrics_port: int,
+    environ: Mapping[str, str],
+) -> str:
     endpoint = environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
     if not endpoint:
         raise LauncherError("OTEL_EXPORTER_OTLP_ENDPOINT is not set")
     protocol = environ.get("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
     if protocol != "grpc":
         raise LauncherError(f"OBI scenarios export over grpc, not {protocol}")
-    if not DEBUG_LOG_LEVEL.search(template):
-        raise LauncherError(
-            f"{CONFIG} must set `log_level: debug`: the launcher resumes the "
-            "scenario on OBI's debug log of the attach"
-        )
     values = {
-        "OBI_TARGET_PID": str(pid),
+        "OBI_PROCESS_MATCH": json.dumps(dict(selector)),
+        "OBI_INTERNAL_METRICS_PORT": str(metrics_port),
         "OTEL_EXPORTER_OTLP_ENDPOINT": endpoint,
         "OBI_METRIC_EXPORT_INTERVAL": str(METRIC_EXPORT_INTERVAL_MILLIS),
     }
@@ -200,18 +219,30 @@ def render_config(template: str, pid: int, environ: Mapping[str, str]) -> str:
     return re.sub(r"\$\{([A-Z0-9_]+)\}", substitute, template)
 
 
-class Readiness:
-    def __init__(self, pid: int) -> None:
-        self._pid = re.compile(rf"\bpid={pid}\b")
-        self._attached = False
+def instrumented(exposition: str, executable: str) -> bool:
+    for sample in INSTRUMENTED_PROCESSES.finditer(exposition):
+        if sample["name"] == executable:
+            try:
+                return float(sample["value"]) > 0
+            except ValueError:
+                return False
+    return False
 
-    def feed(self, line: str) -> bool:
-        if not self._attached:
-            self._attached = (
-                ATTACHED_MESSAGE in line and self._pid.search(line) is not None
-            )
-            return False
-        return DONE_MESSAGE in line and ATTACHER_COMPONENT in line
+
+def free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return int(probe.getsockname()[1])
+
+
+def _scrape(port: int) -> str:
+    try:
+        with urllib.request.urlopen(  # noqa: S310
+            f"http://127.0.0.1:{port}/metrics", timeout=1
+        ) as response:
+            return response.read().decode(errors="replace")
+    except (urllib.error.URLError, OSError):
+        return ""
 
 
 def obi_command(executable: Path, config: Path) -> list[str]:
@@ -222,21 +253,15 @@ def obi_command(executable: Path, config: Path) -> list[str]:
 
 
 class _Follower(threading.Thread):
-    def __init__(self, stream: IO[bytes], log: IO[bytes], pid: int) -> None:
+    def __init__(self, stream: IO[bytes], log: IO[bytes]) -> None:
         super().__init__(daemon=True)
         self._stream = stream
         self._log = log
-        self._readiness = Readiness(pid)
-        self.ready = threading.Event()
 
     def run(self) -> None:
         for raw in iter(self._stream.readline, b""):
             self._log.write(raw)
             self._log.flush()
-            if not self.ready.is_set() and self._readiness.feed(
-                raw.decode(errors="replace")
-            ):
-                self.ready.set()
 
 
 def exit_status(code: int) -> int:
@@ -313,12 +338,14 @@ class Scenario:
 
 def _wait_ready(
     obi: subprocess.Popen[bytes],
-    follower: _Follower,
     scenario: Scenario,
+    metrics_port: int,
+    executable: str,
     timeout: float,
 ) -> None:
     deadline = time.monotonic() + timeout
-    while not follower.ready.wait(POLL_INTERVAL):
+    while not instrumented(_scrape(metrics_port), executable):
+        time.sleep(POLL_INTERVAL)
         if obi.poll() is not None:
             raise LauncherError(
                 f"OBI exited with status {obi.returncode} before instrumenting"
@@ -357,12 +384,15 @@ def _tail(path: Path, lines: int = 40) -> str:
 
 def run(
     command: Sequence[str],
+    exe: str | None = None,
+    args: str | None = None,
     environ: Mapping[str, str] = os.environ,
 ) -> int:
     if not sys.platform.startswith("linux"):
         raise LauncherError("OBI runs on Linux only")
     if not command:
         raise LauncherError("run needs the scenario command")
+    selector = process_match(command, exe, args)
     executable = binary(environ)
     if not executable.is_file():
         raise LauncherError(
@@ -388,12 +418,15 @@ def run(
         try:
             scenario = Scenario(command, Path(scratch) / "gate")
             pid = scenario.wait_at_gate(ready_timeout)
+            name = Path(os.readlink(f"/proc/{pid}/exe")).name
+            metrics_port = free_port()
             LOG_DIR.mkdir(parents=True, exist_ok=True)
             log_path = (LOG_DIR / f"{pid}.log").resolve()
             with log_path.open("wb") as log:
                 config = Path(scratch) / "obi.yaml"
                 config.write_text(
-                    render_config(template, pid, environ), encoding="utf-8"
+                    render_config(template, selector, metrics_port, environ),
+                    encoding="utf-8",
                 )
                 obi = subprocess.Popen(  # noqa: S603
                     obi_command(executable, config),
@@ -402,9 +435,9 @@ def run(
                     stderr=subprocess.STDOUT,
                 )
                 assert obi.stdout is not None
-                follower = _Follower(obi.stdout, log, pid)
+                follower = _Follower(obi.stdout, log)
                 follower.start()
-                _wait_ready(obi, follower, scenario, ready_timeout)
+                _wait_ready(obi, scenario, metrics_port, name, ready_timeout)
                 scenario.release()
                 status = exit_status(scenario.process.wait())
                 deadline = time.monotonic() + settle
@@ -439,6 +472,15 @@ def _parser() -> argparse.ArgumentParser:
     )
     install_parser.add_argument("command", nargs=argparse.REMAINDER)
     run_parser = commands.add_parser(RUN, help="run COMMAND under OBI")
+    run_parser.add_argument(
+        "--exe",
+        help="glob on the resolved executable path of the process to instrument",
+    )
+    run_parser.add_argument(
+        "--args",
+        help="glob on the command line, without argv[0], of the process to "
+        "instrument",
+    )
     run_parser.add_argument("command", nargs=argparse.REMAINDER)
     return parser
 
@@ -460,7 +502,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return subprocess.call(command)  # noqa: S603
             except OSError as error:
                 raise LauncherError(f"{command[0]}: {error}") from error
-        return run(command)
+        return run(command, arguments.exe, arguments.args)
     except LauncherError as error:
         print(f"otel-conformance-obi: {error}", file=sys.stderr)
         return 1

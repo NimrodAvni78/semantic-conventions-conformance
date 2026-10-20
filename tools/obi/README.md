@@ -23,26 +23,31 @@ implementations, so the report compares OBI with them library by library.
 `~/.cache/otel-conformance/obi/<version>/`, then runs `COMMAND`, which is the
 directory's own build step: `setup:` is one command.
 
-`run COMMAND...` runs a scenario:
+`run [--exe GLOB] [--args GLOB] COMMAND...` runs a scenario:
 
 1. Starts `COMMAND` with `OTEL_CONFORMANCE_GATE` naming a Unix socket the
    launcher listens on.
 2. Waits for the scenario to reach the gate: before its workload, the
-   scenario connects, sends its own PID and blocks. The PID comes from the
-   process that will make the requests, so a wrapper in between (`uv run`,
-   `gradle run`) needs no special handling. In Go the gate is
+   scenario connects, sends its PID and blocks. In Go the gate is
    [`scenario.WaitAtGate`](../go/scenario).
 3. Starts OBI with [`obi.yaml`](src/otel_conformance_obi/obi.yaml) selecting
-   only that PID, and releases the scenario once OBI logs that it attached
-   the process and registered its PID, so the first request is measured.
-4. After `COMMAND` exits, keeps OBI running for the settle period, longer than
+   processes by OBI's own process match: `--exe` on the resolved executable
+   path, `--args` on the command line without `argv[0]`. Without either it
+   selects `COMMAND`'s resolved executable, which is exact for a binary run
+   directly. A scenario behind a wrapper names what the wrapper finally runs,
+   usually with `--args`: the Python interpreter and the Java runtime are the
+   same executable as the mock server and every other scenario.
+4. Releases the scenario once OBI's `obi_instrumented_processes` internal
+   metric counts the gated process's executable. OBI raises it after it
+   registered the process, so the first request is measured.
+5. After `COMMAND` exits, keeps OBI running for the settle period, longer than
    both the span batch delay and the metric export interval, then stops it.
    OBI does not export what it still buffers when it is stopped.
 
 The gate exists because OBI finds new processes by polling `/proc` and then
 attaches from user space, which takes about a second, while a scenario's whole
-workload can finish in less than 100 ms. Starting OBI first and selecting the
-scenario by executable path measures nothing.
+workload can finish in less than 100 ms. Starting OBI first and running the
+scenario unheld measures nothing.
 
 `run` exits with `COMMAND`'s status. It fails instead when the scenario exits
 before or never reaches the gate, when OBI exits before it is stopped, or when
@@ -55,8 +60,10 @@ OBI needs root and a Linux kernel with BTF. The launcher runs it with
 ## Configuration
 
 [`obi.yaml`](src/otel_conformance_obi/obi.yaml) is an OBI Config v2 document.
-`run` substitutes `${OBI_TARGET_PID}`, `${OTEL_EXPORTER_OTLP_ENDPOINT}` and
-`${OBI_METRIC_EXPORT_INTERVAL}` and passes the result to `obi -config`. It
+`run` substitutes `${OBI_PROCESS_MATCH}`, `${OBI_INTERNAL_METRICS_PORT}` (a free
+local port for the internal metrics endpoint readiness is read from),
+`${OTEL_EXPORTER_OTLP_ENDPOINT}` and `${OBI_METRIC_EXPORT_INTERVAL}` and passes
+the result to `obi -config`. It
 selects every attribute OBI can emit (`attributes.select: {"*": {include:
 ["*"]}}`) and every HTTP payload extractor with 64 KiB capture buffers, so a
 run measures the most OBI can say, not its default subset.
@@ -67,8 +74,8 @@ generic tracer's smaller HTTP event never reaches, so a single request is only
 read by a fallback poll every 3 s, and OBI drops what is still in the ring
 buffer when it stops.
 
-A replacement template must keep `log_level: debug`: readiness is read from
-OBI's debug log, and `run` refuses a template without it.
+A replacement template must keep the internal metrics endpoint on
+`${OBI_INTERNAL_METRICS_PORT}`: readiness is read from it.
 
 | Variable | |
 | --- | --- |
