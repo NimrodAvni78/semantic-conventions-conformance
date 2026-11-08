@@ -57,7 +57,10 @@ solution also lists the shared projects under
 A Python instrumentation has nothing to build. Its workload is a module in
 `python/<library>/scenarios/`, and each `<side>/` directory holds the
 `pyproject.toml` and `uv.lock` that pin one instrumentation, next to the
-`scenario.py` that turns it on before handing the workload to the harness.
+`scenario.py` that turns it on before handing the workload to the harness. The
+`obi` directories turn nothing on: their `scenario.py` waits at
+[`otel-conformance-obi`](../../tools/obi)'s gate and is instrumented from
+outside.
 
 Ruby scenarios use MRI 3.4 and keep each side in its own locked Bundler package:
 

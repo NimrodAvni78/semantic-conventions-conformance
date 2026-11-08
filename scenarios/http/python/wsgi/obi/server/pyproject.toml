@@ -1,0 +1,15 @@
+[project]
+name = "wsgi-obi-conformance-server"
+version = "0.0.0"
+requires-python = ">=3.12"
+dependencies = [
+    "otel-conformance-obi",
+    "otel-http-test-client",
+]
+
+[tool.uv.sources]
+otel-conformance-obi = { path = "../../../../../../tools/obi", editable = true }
+otel-http-test-client = { path = "../../../../../../tools/http/test-client/python", editable = true }
+
+[tool.uv]
+package = false
